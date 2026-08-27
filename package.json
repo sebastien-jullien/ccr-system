@@ -1,0 +1,29 @@
+{
+  "name": "ccr-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CCR — Contradictory Cross-Review. Orchestrateur neutre de contre-expertise entre experts IA en sessions natives persistantes.",
+  "license": "MPL-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "bin": {
+    "ccr": "./bin/ccr.mjs"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"tests/unit/**/*.test.ts\"",
+    "test:integration": "node --test --test-timeout=1800000 \"tests/integration/**/*.test.ts\"",
+    "test:performance": "node --test --test-concurrency=1 --test-timeout=1800000 \"tests/performance/**/*.test.ts\"",
+    "ccr": "node ./bin/ccr.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "marked": "18.0.9"
+  },
+  "author": "Sébastien JULLIEN"
+}

@@ -1,0 +1,9 @@
+node_modules/
+*.log
+
+# État local d'exécution des runs CCR.
+.ccr/
+
+# Sorties temporaires de développement.
+tmp/
+.tmp/

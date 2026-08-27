@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCR — Contre-expertise croisée</title>
+<link rel="stylesheet" href="/assets/styles.css">
+<script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+<!-- Le navigateur de runs précède le détail dans l'ordre du DOM. Sans ce lien,
+     atteindre le contenu au clavier suppose de traverser toute la liste. -->
+<a class="skip-link" href="#run-panel">Aller au contenu du run</a>
+<header class="shell-header">
+  <div class="shell-identity">
+    <h1>CCR<span class="shell-tagline">Contre-expertise croisée</span></h1>
+    <span class="shell-env">Environnement local</span>
+  </div>
+  <p class="shell-subtitle">Les journaux CCR restent la source de vérité : cet écran les lit, et n’enregistre que ce que vous y demandez.</p>
+  <nav class="views" aria-label="Vues globales">
+    <button type="button" id="view-runs" class="view-tab" aria-pressed="true">Contre-expertises</button>
+    <button type="button" id="view-doctor" class="view-tab" aria-pressed="false">Diagnostic</button>
+    <button type="button" id="view-config" class="view-tab" aria-pressed="false">Configuration</button>
+  </nav>
+</header>
+
+<p id="banner" class="banner" role="status" aria-live="polite" hidden></p>
+
+<div class="layout">
+  <button type="button" id="toggle-runs" class="toggle-runs" aria-expanded="true"
+          aria-controls="runs-panel">Contre-expertises</button>
+  <nav id="runs-panel" class="runs-panel" aria-label="Navigateur des contre-expertises">
+    <div class="panel-head">
+      <h2>Contre-expertises</h2>
+      <button type="button" id="refresh-runs">Rafraîchir la liste</button>
+    </div>
+    <button type="button" id="open-new-run" class="primary block">+ Nouvelle contre-expertise</button>
+    <label class="visually-hidden" for="runs-search">Rechercher un run</label>
+    <input type="search" id="runs-search" class="runs-search" placeholder="Rechercher un run…"
+           aria-label="Rechercher un run par titre ou identifiant" autocomplete="off">
+    <div id="runs-status" class="status" role="status" aria-live="polite"></div>
+    <ul id="runs-list" class="runs-list"></ul>
+  </nav>
+
+  <main id="detail" class="detail">
+    <section id="newrun-panel" hidden aria-label="Nouvelle contre-expertise">
+      <div class="panel-head">
+        <h2>Nouvelle contre-expertise</h2>
+      </div>
+      <form id="start-form" class="start-form" aria-label="Nouvelle contre-expertise">
+        <fieldset class="start-section">
+          <legend>Sujet et intention</legend>
+          <label for="start-title">Sujet</label>
+          <input type="text" id="start-title" name="start-title" autocomplete="off">
+          <label for="start-prompt">Contexte initial</label>
+          <textarea id="start-prompt" name="start-prompt" rows="12" class="editorial"></textarea>
+        </fieldset>
+        <fieldset class="start-section">
+          <legend>Environnement</legend>
+          <label for="start-workspace">Répertoire de travail</label>
+          <input type="text" id="start-workspace" name="start-workspace" autocomplete="off" spellcheck="false">
+        </fieldset>
+        <fieldset class="start-section">
+          <legend>Experts</legend>
+          <div class="start-experts">
+            <div class="start-expert">
+              <label for="start-author">Auteur</label>
+              <select id="start-author" name="start-author">
+                <option value="">— par défaut —</option>
+                <option value="claude">Claude</option>
+                <option value="codex">Codex</option>
+              </select>
+            </div>
+            <div class="start-expert">
+              <label for="start-challenger">Challenger</label>
+              <select id="start-challenger" name="start-challenger">
+                <option value="">— par défaut —</option>
+                <option value="claude">Claude</option>
+                <option value="codex">Codex</option>
+              </select>
+            </div>
+          </div>
+        </fieldset>
+        <fieldset class="start-section">
+          <legend>Gouvernance</legend>
+          <label for="start-max-invocations">Limite d’invocations CCR — facultatif</label>
+          <input type="number" id="start-max-invocations" name="start-max-invocations" min="0" step="1" inputmode="numeric">
+        </fieldset>
+        <fieldset class="start-section">
+          <legend>Récapitulatif</legend>
+          <div id="start-summary" class="start-summary"></div>
+        </fieldset>
+        <div class="start-actions">
+          <button type="button" id="start-cancel" class="secondary">Annuler</button>
+          <button type="button" id="start-submit" class="primary">Démarrer la contre-expertise</button>
+        </div>
+        <div id="start-status" class="status" role="status" aria-live="polite"></div>
+      </form>
+    </section>
+
+    <section id="run-panel" hidden>
+      <div class="panel-head">
+        <h2 id="run-title" tabindex="-1">Run</h2>
+        <button type="button" id="refresh-run">Rafraîchir le run</button>
+      </div>
+      <nav class="sections" aria-label="Sections du run">
+        <button type="button" id="tab-overview" class="section-tab" aria-pressed="true">Discussion</button>
+        <button type="button" id="tab-runtime" class="section-tab" aria-pressed="false">Dossier</button>
+        <button type="button" id="tab-timeline" class="section-tab" aria-pressed="false">Historique</button>
+        <button type="button" id="tab-recovery" class="section-tab" aria-pressed="false">État &amp; reprise</button>
+      </nav>
+      <div id="run-status" class="status" role="status" aria-live="polite"></div>
+      <section id="section-overview" class="section" aria-label="Discussion"></section>
+      <section id="section-timeline" class="section" aria-label="Historique" hidden></section>
+      <section id="section-recovery" class="section" aria-label="État et reprise" hidden>
+        <p id="recovery-status" class="status" role="status" aria-live="polite"></p>
+        <div id="recovery-body"></div>
+        <div id="run-facts"></div>
+      </section>
+      <section id="section-runtime" class="section" aria-label="Dossier" hidden></section>
+    </section>
+
+    <section id="doctor-panel" hidden>
+      <div class="panel-head">
+        <h2>Diagnostic</h2>
+        <button type="button" id="refresh-doctor">Rafraîchir le diagnostic</button>
+      </div>
+      <div id="doctor-status" class="status" role="status" aria-live="polite"></div>
+      <div id="doctor-body"></div>
+    </section>
+
+    <section id="config-panel" hidden>
+      <div class="panel-head">
+        <h2>Configuration</h2>
+        <button type="button" id="refresh-config">Rafraîchir la configuration</button>
+      </div>
+      <div id="config-status" class="status" role="status" aria-live="polite"></div>
+      <div id="config-body"></div>
+    </section>
+
+    <p id="empty-detail" class="empty">Sélectionnez un run pour afficher son détail.</p>
+  </main>
+</div>
+</body>
+</html>

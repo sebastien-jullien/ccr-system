@@ -1,0 +1,1127 @@
+/*
+ * Cockpit CCR — feuille de style unique, servie depuis `'self'`.
+ *
+ * Sobriété assumée : cet écran sert à lire un état technique, pas à séduire.
+ * Aucune information n'est portée par la seule couleur — chaque pastille porte
+ * aussi son texte, faute de quoi l'écran mentirait à qui ne distingue pas les
+ * teintes.
+ */
+
+:root {
+  /*
+   * Couche sémantique (V2.3-S2).
+   *
+   * Un token nomme un rôle, jamais une teinte : `--surface` survit à un
+   * changement de palette, `--fond` ne survivrait pas à un thème clair. Seuls
+   * figurent ici les tokens qu'un composant consomme réellement — aucun n'est
+   * créé « pour plus tard ».
+   */
+  --surface: #10141a;
+  --surface-raised: #161c24;
+  --surface-sunken: #0c1015;
+  --text: #dde4ec;
+  --text-muted: #8fa0b4;
+  --border: #2a3441;
+  --accent: #5aa9e6;
+
+  --status-available: #6ac48a;
+  --status-active: #5aa9e6;
+  --status-warning: #e6a25a;
+  --status-blocked: #e66a6a;
+  --status-neutral: #8fa0b4;
+
+  --role-author: #7ab8f5;
+  --role-challenger: #c9a2e8;
+  --role-human: #6ac48a;
+  --role-system: #8fa0b4;
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-editorial: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --width-reading: 74ch;
+  /*
+   * Largeur d'ÉCRITURE. Distincte de la largeur de lecture : on écrit dans une
+   * police d'interface, et `ch` y vaut moins large que dans la prose. 72ch tient
+   * la fourchette 70–80 caractères visée sans dépendre du poste de travail.
+   */
+  --width-editorial: 72ch;
+  --focus-ring: 2px solid var(--accent);
+  --focus-offset: 2px;
+
+  /*
+   * Ajouts de la cible UX/UI.
+   *
+   * Dérivés de la palette existante, jamais substitués à elle : `--surface-deep`
+   * descend d'un cran sous le fond pour distinguer une surface enfoncée d'une
+   * surface élevée, et `--border-strong` donne aux contrôles un bord lisible là
+   * où `--border` sépare des zones.
+   */
+  --surface-deep: #090c11;
+  --border-strong: #33404f;
+  --text-secondary: #9db0c6;
+  --control-h: 40px;
+  --text-size: 15px;
+  --text-size-prose: 16.5px;
+  --text-size-meta: 13px;
+
+  /*
+   * Anciennes variables, redéfinies **en termes** des nouvelles.
+   *
+   * Tout le CSS existant continue de fonctionner sans être touché : c'est ce
+   * qui empêche cette slice de devenir un remplacement cosmétique exhaustif.
+   * Elles disparaîtront lorsque leur dernier usage disparaîtra.
+   */
+  --fond: var(--surface);
+  --fond-panneau: var(--surface-raised);
+  --fond-creux: var(--surface-sunken);
+  --bord: var(--border);
+  --texte: var(--text);
+  --texte-doux: var(--text-muted);
+  --alerte: var(--status-warning);
+  --erreur: var(--status-blocked);
+  --ok: var(--status-available);
+  --mono: var(--font-mono);
+}
+
+* { box-sizing: border-box; }
+
+/*
+ * Coque pleine hauteur.
+ *
+ * `.layout` réservait autrefois 92 px d'en-tête en dur : dès que l'en-tête
+ * dépassait cette valeur, ou que le contenu était court, le fond du document
+ * apparaissait sous le conteneur. La colonne flex fait le calcul à notre place.
+ */
+html { height: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--fond);
+  color: var(--texte);
+  font: 15px/1.55 var(--font-ui);
+}
+
+h1 { font-size: 1.15rem; margin: 0; }
+h2 { font-size: 1rem; margin: 0; }
+h3 { font-size: 0.95rem; margin: var(--space-5) 0 var(--space-2); color: var(--text); font-weight: 600; }
+
+.shell-header {
+  padding: 0.9rem 1.2rem;
+  border-bottom: 1px solid var(--bord);
+  background: var(--fond-panneau);
+}
+
+.shell-subtitle { margin: 0.2rem 0 0.7rem; color: var(--texte-doux); font-size: 0.85rem; }
+
+button {
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--texte);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  min-height: var(--control-h);
+  padding: 0 0.85rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--accent); color: #08101a; border-color: var(--accent); }
+
+.views, .sections { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.sections { margin: 0.6rem 0; }
+
+.banner {
+  margin: 0;
+  padding: 0.6rem 1.2rem;
+  background: #3a2020;
+  color: #ffd9d9;
+  border-bottom: 1px solid var(--erreur);
+}
+
+.layout { display: flex; align-items: stretch; gap: 1px; background: var(--bord); flex: 1 1 auto; min-height: 0; }
+
+.runs-panel { flex: 0 0 320px; background: var(--fond-panneau); padding: 0.9rem; align-self: stretch; }
+.detail { flex: 1 1 auto; background: var(--fond); padding: var(--space-4) var(--space-5); min-width: 0; }
+
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+
+.status { color: var(--texte-doux); font-size: 0.85rem; min-height: 1.2rem; margin: 0.4rem 0; }
+.status.is-error { color: var(--erreur); }
+.empty { color: var(--texte-doux); }
+
+.runs-list { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.run-button {
+  display: block; width: 100%; text-align: left; padding: 0.5rem 0.6rem;
+  background: var(--fond-creux); border: 1px solid var(--bord); border-radius: 4px;
+}
+.run-button[aria-pressed="true"] { background: #1d2b3a; color: var(--texte); border-color: var(--accent); }
+.run-id { font-family: var(--mono); font-size: 0.82rem; }
+.run-title { display: block; color: var(--texte-doux); font-size: 0.82rem; overflow-wrap: anywhere; }
+.run-meta { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
+
+.badge {
+  font-size: 0.72rem; padding: 0.05rem 0.4rem; border-radius: 3px;
+  border: 1px solid var(--bord); color: var(--texte-doux); white-space: nowrap;
+}
+.badge.is-attention { color: var(--alerte); border-color: var(--alerte); }
+.badge.is-error { color: var(--erreur); border-color: var(--erreur); }
+.badge.is-ok { color: var(--ok); border-color: var(--ok); }
+
+.facts { display: grid; grid-template-columns: minmax(9rem, 14rem) 1fr; gap: 0.25rem 0.9rem; margin: 0; }
+.facts dt { color: var(--texte-doux); font-size: 0.85rem; }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.mono { font-family: var(--mono); font-size: 0.85rem; }
+
+.cards { display: flex; flex-direction: column; gap: 0.5rem; }
+.card { border: 1px solid var(--bord); border-radius: var(--radius-sm); padding: 0.6rem 0.7rem; background: var(--fond-panneau); }
+.card-head { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.card-note { color: var(--texte-doux); font-size: 0.85rem; margin: 0.3rem 0 0; }
+
+.entry { border-left: 2px solid var(--bord); padding: 0.35rem 0 0.35rem 0.7rem; margin-bottom: 0.5rem; }
+.entry-head { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: baseline; font-size: 0.8rem; color: var(--texte-doux); }
+.entry-content {
+  margin: 0.3rem 0 0; padding: 0.4rem 0.5rem; background: var(--fond-creux);
+  border-radius: 3px; font-family: var(--mono); font-size: 0.82rem;
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow-y: auto;
+}
+
+.command { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.command code { font-family: var(--mono); font-size: 0.82rem; background: var(--fond-creux); padding: 0.2rem 0.4rem; border-radius: 3px; overflow-wrap: anywhere; }
+
+.stale { border: 1px solid var(--alerte); border-radius: 4px; padding: 0.6rem 0.7rem; margin-bottom: 0.6rem; color: var(--alerte); }
+.stale p { margin: 0 0 0.5rem; }
+
+@media (max-width: 900px) {
+  .layout { flex-direction: column; }
+  .runs-panel { flex: 1 1 auto; width: 100%; }
+  .detail { width: 100%; }
+}
+
+/* Contrôles de mutation — Slice 4. */
+.action { margin-top: 0.4rem; }
+.decision { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
+.decision-input {
+  font: inherit; font-family: var(--mono); font-size: 0.85rem;
+  color: var(--texte); background: var(--fond-creux);
+  border: 1px solid var(--bord); border-radius: 4px; padding: 0.4rem 0.5rem; resize: vertical;
+}
+.decision-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.status button { margin-left: 0.5rem; }
+
+.send-target {
+  font: inherit; font-size: 0.85rem; color: var(--texte);
+  background: var(--fond-creux); border: 1px solid var(--bord);
+  border-radius: 4px; padding: 0.25rem 0.4rem; align-self: flex-start;
+}
+.send-target:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+
+/* --------------------------------------------------------------------------
+ * MarkdownContent (V2.3-S2)
+ *
+ * Typographie éditoriale, distincte de celle des contrôles : un texte long ne
+ * se lit pas avec la police d'une barre d'outils. La largeur de lecture est
+ * bornée et ne dépend pas de la fenêtre — l'espace en excès n'est pas rempli.
+ * Code et tableaux débordent dans LEUR conteneur, jamais dans la page.
+ * ------------------------------------------------------------------------ */
+
+.md {
+  max-width: var(--width-reading);
+  font-family: var(--font-editorial);
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.md-heading { font-family: var(--font-ui); line-height: 1.3; margin: var(--space-5) 0 var(--space-2); }
+.md > .md-heading:first-child { margin-top: 0; }
+.md-paragraph { margin: 0 0 var(--space-4); }
+.md-list { margin: 0 0 var(--space-4); padding-left: var(--space-5); }
+.md-list .md-list { margin-bottom: 0; }
+.md-list li { margin: var(--space-1) 0; }
+
+.md-quote {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-1) var(--space-4);
+  border-left: 3px solid var(--border);
+  color: var(--text-muted);
+}
+
+.md-code-inline {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1);
+}
+
+.md-code {
+  margin: 0 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+
+.md-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.md-code-lang { text-transform: lowercase; letter-spacing: 0.04em; }
+.md-copy { font-size: 0.75rem; padding: 0.1rem 0.5rem; }
+
+.md-pre {
+  margin: 0;
+  padding: var(--space-3);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.md-pre code { font-family: inherit; white-space: pre; }
+
+.md-table-scroll { margin: 0 0 var(--space-4); overflow-x: auto; }
+.md-table { border-collapse: collapse; font-family: var(--font-ui); font-size: 0.9rem; }
+.md-table th,
+.md-table td { border: 1px solid var(--border); padding: var(--space-1) var(--space-3); text-align: left; }
+.md-table th { background: var(--surface-raised); color: var(--text-muted); }
+
+.md-rule { border: 0; border-top: 1px solid var(--border); margin: var(--space-5) 0; }
+
+.md-link { color: var(--accent); }
+.md-link:focus-visible,
+.md-copy:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+/* Un lien refusé reste lisible, et se distingue sans dépendre de la couleur. */
+.md-link-inert { text-decoration: underline dotted; }
+.md-link-inert::after { content: " (lien non suivi)"; color: var(--text-muted); font-size: 0.85em; }
+
+/* Balisage brut et jetons inconnus : du texte, et rien de plus. */
+.md-raw,
+.md-unknown {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.md-image { color: var(--text-muted); font-style: italic; }
+
+
+/* --------------------------------------------------------------------------
+ * Espace de travail natif (V2.3-S3)
+ *
+ * Le rôle prime sur le moteur, le fil occupe le corps de l'écran, et le niveau
+ * technique descend dans Inspect. Aucun état n'est porté par la seule couleur :
+ * chaque rôle porte aussi son nom.
+ * ------------------------------------------------------------------------ */
+
+.run-situation {
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.expert-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.expert-card {
+  flex: 1 1 18rem;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--role-system);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.expert-card.role-author { border-left-color: var(--role-author); }
+.expert-card.role-challenger { border-left-color: var(--role-challenger); }
+.expert-name { margin: 0 0 var(--space-1); font-size: 0.95rem; font-family: var(--font-ui); }
+.expert-session { margin: 0 0 var(--space-1); color: var(--text-muted); font-size: 0.85rem; }
+
+.initial-context { margin: 0 0 var(--space-4); }
+.initial-context > summary { cursor: pointer; color: var(--text-muted); font-size: 0.85rem; }
+.actions-unavailable > summary { cursor: pointer; color: var(--text-muted); font-size: 0.85rem; }
+.initial-context > summary:focus-visible,
+.actions-unavailable > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.thread { display: block; }
+
+.thread-round {
+  margin: var(--space-5) 0 var(--space-3);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.thread-entry {
+  margin: 0 0 var(--space-4);
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--role-system);
+}
+
+.thread-entry.thread-contribution { border-left-color: var(--role-author); }
+.thread-entry.thread-human { border-left-color: var(--role-human); }
+
+.thread-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+}
+
+.thread-role { font-weight: 600; color: var(--text); }
+.thread-role.role-challenger { color: var(--role-challenger); }
+.thread-role.role-author { color: var(--role-author); }
+.thread-role.role-human { color: var(--role-human); }
+.thread-meta { color: var(--text-muted); }
+
+.thread-transfer {
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.thread-technical {
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.thread-marker-note,
+.thread-empty { margin: 0; color: var(--text-muted); font-size: 0.85rem; }
+
+/* Viewport étroit : les experts s'empilent, la lecture reste bornée. */
+@media (max-width: 780px) {
+  .expert-card { flex: 1 1 100%; }
+}
+
+
+/* --------------------------------------------------------------------------
+ * Prochaine action, gouvernance, création (V2.3-S4)
+ * ------------------------------------------------------------------------ */
+
+.next-action {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.next-action h3 { margin-top: 0; color: var(--accent); }
+.next-action-line { margin: 0 0 var(--space-2); font-family: var(--font-ui); font-size: 1rem; }
+.next-action-effect {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  color: var(--status-warning);
+}
+.next-action .card { border: 0; padding: 0; background: none; }
+
+/* Les actions secondaires cèdent le premier rang. */
+.cards { opacity: 0.92; }
+
+.start-summary {
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--border);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+}
+
+.start-form select,
+.start-form input[type='number'] {
+  width: 100%;
+  margin-bottom: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-sunken);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.start-form select:focus-visible,
+.start-form input:focus-visible,
+.start-form textarea:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+
+/* --------------------------------------------------------------------------
+ * Navigateur de runs et espace de création (V2.3-S5P1)
+ * ------------------------------------------------------------------------ */
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px;
+  margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/*
+ * V-01 — la surface de la sidebar suit la hauteur disponible.
+ *
+ * `max-height: 100vh` plafonnait le PANNEAU alors que `.layout` peut être plus
+ * haut que le viewport dès que le contenu principal défile. Sous le plafond,
+ * c'est le fond de `.layout` — `--bord`, un bleu-gris — qui apparaissait : d'où
+ * la rupture de surface observée sous la liste. Le panneau s'étire désormais
+ * sur toute la hauteur de la rangée, et c'est la LISTE qui défile.
+ */
+.runs-panel { display: flex; flex-direction: column; align-self: stretch; }
+.runs-panel[data-collapsed] { display: none; }
+.runs-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; margin: 0; padding: 0; list-style: none; }
+
+.toggle-runs { display: none; }
+
+button.primary {
+  background: var(--accent);
+  color: var(--surface);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+button.block { display: block; width: 100%; margin: var(--space-2) 0; }
+button.secondary { background: transparent; }
+
+.runs-search {
+  width: 100%;
+  margin-bottom: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-sunken);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+/* Un run : le nom d'abord, l'identifiant ensuite. */
+.run-button { display: block; width: 100%; text-align: left; }
+.run-name { display: block; font-family: var(--font-ui); font-size: 0.95rem; color: var(--text); }
+.run-button .run-id { display: block; font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-subtle, var(--text-muted)); }
+.run-button.is-selected { border-left: 3px solid var(--accent); background: var(--surface-raised); }
+.run-selected-mark { display: inline-block; margin-left: var(--space-2); font-size: 0.7rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* Espace de création */
+.start-section {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+.start-section > legend { padding: 0 var(--space-2); color: var(--text-muted); font-family: var(--font-ui); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.start-form label { display: block; margin: var(--space-2) 0 var(--space-1); font-size: 0.85rem; color: var(--text-muted); }
+.start-form input[type='text'],
+.start-form input[type='search'],
+.start-form input[type='number'],
+.start-form select,
+.start-form textarea {
+  width: 100%;
+  padding: var(--space-2);
+  background: var(--surface-sunken);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+.start-form textarea.editorial {
+  min-height: 14rem;
+  font-family: var(--font-editorial);
+  font-size: 1rem;
+  line-height: 1.6;
+  resize: vertical;
+}
+.start-experts { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.start-expert { flex: 1 1 14rem; min-width: 0; }
+.start-actions { display: flex; gap: var(--space-3); justify-content: flex-end; margin-top: var(--space-4); }
+
+/* --------------------------------------------------------------------------
+ * Contrôles des surfaces d'action
+ *
+ * Mêmes déclarations que `.start-form` ci-dessus, appliquées aux champs des
+ * cartes de controverse, d'élément probatoire et de réconciliation. Ils
+ * héritaient jusqu'ici du style par défaut du navigateur : bordure grise,
+ * angles vifs, hauteur de 19 à 21 px contre 32 px pour les boutons voisins.
+ *
+ * Aucun token nouveau, aucune convention nouvelle — la feuille en possédait
+ * déjà une, elle ne couvrait simplement pas ces classes.
+ *
+ * `width: 100%` porte aussi la correction du débordement : un `select` sans
+ * largeur explicite se dimensionne sur son option la plus longue, et
+ * `.evidence-target`, dont les options portent l'énoncé d'une entrée de
+ * controverse, poussait la page entière à défiler horizontalement.
+ * ------------------------------------------------------------------------ */
+
+.controversy-statement-input,
+.evidence-form,
+.evidence-value,
+.evidence-label,
+.evidence-material-select,
+.evidence-target,
+.evidence-orientation,
+.reconciliation-expert,
+.reconciliation-provenance,
+.reconciliation-response-option,
+.reconciliation-content,
+.recovery-note {
+  width: 100%;
+  max-width: 100%;
+  padding: var(--space-2);
+  background: var(--surface-sunken);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.controversy-statement-input:focus-visible,
+.evidence-form:focus-visible,
+.evidence-value:focus-visible,
+.evidence-label:focus-visible,
+.evidence-material-select:focus-visible,
+.evidence-target:focus-visible,
+.evidence-orientation:focus-visible,
+.reconciliation-expert:focus-visible,
+.reconciliation-provenance:focus-visible,
+.reconciliation-response-option:focus-visible,
+.reconciliation-content:focus-visible,
+.recovery-note:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+/* Les zones de saisie libre gardent leur hauteur propre : leur fonction est
+   d'accueillir plusieurs lignes, pas de s'aligner sur un bouton. */
+.controversy-statement-input,
+.evidence-value,
+.reconciliation-content,
+.recovery-note { resize: vertical; min-height: 4.5rem; }
+
+/* Un sélecteur court n'a pas à occuper toute la colonne. */
+.evidence-form,
+.evidence-material-select,
+.evidence-orientation,
+.reconciliation-expert { width: auto; min-width: 12rem; }
+
+/* Empilement régulier des contrôles et de leurs boutons. */
+.evidence-register,
+.evidence-adduce,
+.controversy-record,
+.reconciliation-controls { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.reconciliation-propose { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+
+/* Les gestes d'une même carte s'alignent, sans coller.
+   `.reconciliation-propose` en fait partie : son bouton partage une ligne avec
+   le sélecteur d'expert, et la marge héritée de `.action` décentrait sa boîte
+   de la moitié de sa valeur — 3,2 px sous `align-items: center`.
+   `.controversy-record` la porte aussi : en colonne, elle n'y décentrait rien,
+   mais portait l'écart du bouton à 14 px au lieu des 8 px du reste (P3-01). */
+.reconciliation-controls .action,
+.evidence-adduce .action,
+.evidence-register .action,
+.reconciliation-propose .action,
+.controversy-record .action { margin-top: 0; }
+
+/* --------------------------------------------------------------------------
+ * Signal d'existence d'une proposition, et retour local
+ *
+ * Aucun système d'alerte nouveau : la carte reprend `.card`, `.card-head` et
+ * `.action`, déjà employés par les cartes de contrôle. Elle est mise en avant
+ * par une bordure d'accent — la même que celle du run sélectionné — et non par
+ * une couleur d'alarme, parce qu'elle ne signale ni urgence, ni obligation.
+ * ------------------------------------------------------------------------ */
+
+.proposal-signal {
+  border-left: 3px solid var(--accent);
+  margin: var(--space-3) 0;
+}
+.proposal-signal .card-note { margin: var(--space-1) 0; }
+.proposal-signal .action { margin-top: var(--space-2); }
+
+/* Retour local, à l'endroit où l'accès direct dépose l'utilisateur. */
+.back-to-conversation { margin: 0 0 var(--space-3); }
+
+/* Un geste en cours : le bouton le dit, et ses voisins ne partent pas. */
+button[aria-busy='true'] { opacity: 0.75; cursor: progress; }
+
+/* --------------------------------------------------------------------------
+ * Séparation des éléments voisins
+ *
+ * `Option 1 sur 6` et son identifiant, comme les trois fragments d'une réponse
+ * humaine, se rendaient collés : « Option 1 sur 6opt_000001 ». Le remède est
+ * un espacement de mise en page, non un espace glissé dans les chaînes.
+ * ------------------------------------------------------------------------ */
+
+/* En-tête du run : le sujet porte le nom, l'identifiant reste la provenance. */
+#run-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.run-heading-name { font-size: 1rem; }
+.run-heading-id { font-size: 0.75rem; font-weight: 400; color: var(--text-muted); }
+
+.option-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.reconciliation-response { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.reconciliation-response-detail { display: block; margin: var(--space-1) 0 0; color: var(--text-muted); font-size: 0.85rem; }
+
+@media (max-width: 900px) {
+  .layout { display: block; }
+  .toggle-runs { display: inline-block; margin: var(--space-2); }
+  .runs-panel { max-height: 45vh; }
+  .start-expert { flex: 1 1 100%; }
+  .start-actions { flex-direction: column-reverse; align-items: stretch; }
+}
+
+
+/* --------------------------------------------------------------------------
+ * Finition finale (V2.3-S5P2)
+ * ------------------------------------------------------------------------ */
+
+.run-situation { font-size: 1.05rem; margin-bottom: var(--space-1); }
+.run-situation-meta { margin: 0 0 var(--space-4); display: flex; gap: var(--space-2); }
+
+/* Les contrôles secondaires cessent d'occuper la surface d'une action. */
+.actions-title {
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+}
+/*
+ * `.cards` est une colonne ; `.cards.compact` n'en redéclarait pas la direction
+ * et héritait donc de `column`. Dans une colonne, `flex-basis` s'applique à la
+ * HAUTEUR : `flex: 1 1 20rem` donnait 320 px de haut à chaque carte, quelle que
+ * soit la quantité de contenu — une carte à deux lignes occupait la surface
+ * d'un formulaire. La direction est désormais explicite.
+ */
+.cards.compact { display: flex; flex-direction: row; flex-wrap: wrap; gap: var(--space-2); }
+.cards.compact .card { flex: 1 1 20rem; padding: var(--space-2) var(--space-3); }
+
+.actions-unavailable { margin-top: var(--space-4); }
+.actions-unavailable > summary,
+.recovery-quiet > summary,
+.entry-payload > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+}
+.actions-unavailable > summary:focus-visible,
+.recovery-quiet > summary:focus-visible,
+.entry-payload > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.recovery-calm {
+  margin: var(--space-4) 0 var(--space-2);
+  font-family: var(--font-ui);
+  font-size: 1rem;
+  color: var(--status-available);
+}
+.recovery-calm::before { content: "· "; }
+
+.entry-payload { margin: var(--space-2) 0 0; }
+
+/* Métadonnées plus discrètes, contenu plus confortable. */
+.entry-head { font-size: 0.78rem; color: var(--text-muted); }
+.entry-content { font-size: 0.85rem; max-height: 32rem; overflow: auto; }
+
+
+/* ==========================================================================
+ * Cible UX/UI — hiérarchie, densité, divulgation progressive
+ *
+ * Aucune dépendance ajoutée : la modernisation vient de la hiérarchie, des
+ * surfaces, de la typographie et de l'espacement. Les polices restent celles
+ * du système ; seul le rythme change.
+ * ========================================================================== */
+
+/* --- Identité ------------------------------------------------------------ */
+.shell-identity { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+.shell-identity h1 { display: flex; align-items: baseline; gap: var(--space-3); font-size: 1.05rem; letter-spacing: 0.02em; }
+.shell-tagline { font-size: 0.9rem; font-weight: 400; color: var(--text-secondary); letter-spacing: 0; }
+.shell-env {
+  font-size: 0.72rem; color: var(--text-muted); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0.1rem 0.55rem; white-space: nowrap;
+}
+.shell-subtitle { font-size: var(--text-size-meta); }
+
+/* --- Onglets de section : plus des boutons pleins ------------------------- */
+.sections { gap: var(--space-1); border-bottom: 1px solid var(--border); margin: var(--space-4) 0; }
+.section-tab {
+  background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  color: var(--text-muted); min-height: 38px; padding: 0 var(--space-3); font-weight: 500;
+}
+.section-tab:hover { color: var(--text); border-color: transparent; border-bottom-color: var(--border-strong); }
+.section-tab[aria-pressed="true"] { background: none; color: var(--text); border-bottom-color: var(--accent); }
+
+/* --- Bandeau sujet -------------------------------------------------------- */
+#run-title { gap: var(--space-3); }
+.run-heading-name { font-size: 1.3rem; line-height: 1.25; letter-spacing: -0.01em; }
+.run-heading-id { font-size: 0.74rem; }
+.run-situation { font-size: var(--text-size-meta); color: var(--text-secondary); }
+
+/* --- Identité d'expert ---------------------------------------------------- */
+.expert-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: var(--space-3); }
+.expert-role { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+.expert-role.is-author { color: var(--role-author); }
+.expert-role.is-challenger { color: var(--role-challenger); }
+.expert-provider { font-weight: 600; }
+.expert-line { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+
+/* --- Message d'expert ----------------------------------------------------- */
+.entry-role { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+.entry-role.is-author { color: var(--role-author); }
+.entry-role.is-challenger { color: var(--role-challenger); }
+.entry-role.is-human { color: var(--role-human); }
+.entry-role.is-system { color: var(--role-system); }
+.entry-lead { color: var(--text-secondary); font-size: var(--text-size-meta); margin: var(--space-1) 0 0; }
+.md-body { max-width: var(--width-reading); font-size: var(--text-size-prose); line-height: 1.68; }
+
+/* --- Divulgation technique ------------------------------------------------ */
+details.tech-details { border-top: 1px dashed var(--border); margin-top: var(--space-3); padding-top: var(--space-2); }
+details.tech-details > summary {
+  cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 0.4rem;
+  color: var(--text-muted); font-size: var(--text-size-meta); padding: 0.2rem 0;
+}
+details.tech-details > summary::-webkit-details-marker { display: none; }
+details.tech-details > summary::before { content: "\25B8"; font-size: 0.65rem; color: var(--text-muted); }
+details.tech-details[open] > summary::before { content: "\25BE"; }
+details.tech-details > summary:hover { color: var(--text); }
+details.tech-details > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+details.tech-details .facts { margin-top: var(--space-2); }
+details.tech-details .facts dt,
+details.tech-details .facts dd { font-size: 0.8rem; }
+
+/* --- Prochaine étape ------------------------------------------------------ */
+.next-action { border-radius: var(--radius-md); }
+
+/* --- Gouvernance scannable ------------------------------------------------ */
+.gov-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--space-4); margin: var(--space-3) 0 0;
+}
+.gov-cell > dd { margin: 0; }
+.gov-label { color: var(--text-muted); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.gov-value { display: block; font-size: 0.95rem; font-variant-numeric: tabular-nums; margin-top: 0.25rem; }
+/* Une ignorance n'est pas un chiffre : elle se lit en retrait. La couleur ne
+ * remplace jamais la phrase — elle la double. */
+.gov-value.is-unknown { color: var(--text-muted); }
+.gov-note { display: block; color: var(--text-muted); font-size: var(--text-size-meta); margin-top: 0.2rem; line-height: 1.45; }
+
+/* --- Message d'expert : rôle, contenu, provenance, technique --------------- */
+.thread-entry { display: flex; flex-direction: column; gap: var(--space-2); }
+.thread-head { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+.thread-entry > .entry-lead { order: 3; margin: 0; }
+.thread-entry > .tech-details { order: 4; }
+.thread-entry .md-body { max-width: var(--width-reading); }
+
+/* --- Dossier -------------------------------------------------------------- */
+
+/* --- Contrôles compacts --------------------------------------------------- */
+/* La hauteur d'une carte de contrôle est dictée par son contenu : `align-items`
+ * empêche une carte à motif long d'étirer sa voisine à la même hauteur. */
+.cards.compact { align-items: flex-start; }
+.control-state { font-size: 0.9rem; color: var(--text-secondary); margin: var(--space-2) 0 0; }
+
+/* --- États vides guidants ------------------------------------------------- */
+.empty-guide {
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-md);
+  padding: var(--space-4); background: var(--surface-deep);
+}
+.empty-guide h4 { margin: 0 0 var(--space-1); font-size: 0.95rem; }
+.empty-guide p { margin: 0; color: var(--text-secondary); font-size: var(--text-size-meta); line-height: 1.6; max-width: 60ch; }
+.empty-guide .action { margin-top: var(--space-3); }
+
+/* --- Champs --------------------------------------------------------------- */
+.field-hint { color: var(--text-muted); font-size: var(--text-size-meta); line-height: 1.55; max-width: 62ch; }
+
+@media (max-width: 1280px) { .runs-panel { flex: 0 0 260px; } }
+@media (max-width: 1024px) {
+  .runs-panel { flex: 0 0 224px; }
+  .detail { padding: var(--space-4); }
+  .expert-cards { grid-template-columns: 1fr; }
+}
+
+
+/* --- LOT B : dossier, sélecteur, glose, gestes groupés -------------------- */
+
+/* Navigation locale du Dossier : des puces, jamais des onglets. */
+.dossier-nav { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0 0 var(--space-4); }
+.dossier-chip { border-radius: 999px; min-height: 32px; font-size: var(--text-size-meta); padding: 0 var(--space-3); }
+
+/* Glose d'un terme du domaine : elle explique, elle n'affirme rien. */
+.term-gloss {
+  margin: var(--space-1) 0 var(--space-3); color: var(--text-secondary);
+  font-size: var(--text-size-meta); line-height: 1.55; max-width: 68ch;
+}
+
+/* Filtre du sélecteur de provenance : visuellement distinct des échanges. */
+.event-filter-row {
+  display: flex; gap: var(--space-2); align-items: flex-start;
+  padding: var(--space-2) var(--space-3); margin-bottom: var(--space-3);
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-deep);
+}
+.event-filter-label { display: flex; flex-direction: column; gap: 0.15rem; cursor: pointer; }
+.event-filter-label strong { font-size: 0.9rem; font-weight: 600; }
+.event-filter-label .muted { color: var(--text-muted); font-size: var(--text-size-meta); }
+
+/*
+ * Les deux groupes de gestes de réconciliation.
+ *
+ * Ils partagent EXACTEMENT la même surface, le même bord et le même rythme :
+ * aucune règle ci-dessous ne distingue l'un comme principal. C'est délibéré —
+ * une hiérarchie visuelle serait une recommandation.
+ */
+.gesture-group {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: var(--space-3); margin: var(--space-3) 0 0;
+  display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-start;
+}
+.gesture-group > legend { padding: 0 var(--space-2); font-size: 0.8rem; font-weight: 600; color: var(--text); }
+.gesture-group > .group-note {
+  margin: 0; color: var(--text-secondary); font-size: var(--text-size-meta);
+  line-height: 1.5; max-width: 62ch;
+}
+.gesture-group > select,
+.gesture-group > textarea { width: 100%; }
+
+
+/* --- LOT C : historique lisible, santé, accessibilité, responsive --------- */
+
+/*
+ * Lien d'évitement : hors écran tant qu'il n'a pas le focus, pleinement visible
+ * dès qu'il l'a. Jamais `display: none` — un lien masqué ainsi n'est pas
+ * atteignable au clavier, ce qui annulerait exactement son objet.
+ */
+.skip-link {
+  position: absolute; left: -9999px; top: 0; z-index: 10;
+  background: var(--surface-raised); color: var(--text);
+  border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-4); text-decoration: none;
+}
+.skip-link:focus { left: var(--space-3); top: var(--space-3); }
+
+/* --- Historique ----------------------------------------------------------- */
+.history { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: flex; flex-direction: column; }
+.history-entry {
+  display: grid; grid-template-columns: 5.5rem 1fr; gap: var(--space-3);
+  padding: var(--space-3) 0; border-bottom: 1px solid var(--border);
+}
+.history-entry:last-child { border-bottom: 0; }
+.history-time { color: var(--text-muted); font-size: var(--text-size-meta); font-variant-numeric: tabular-nums; }
+.history-line { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; margin: 0; }
+.history-who { color: var(--text-secondary); font-size: 0.9rem; }
+.history-sub {
+  color: var(--text-muted); font-size: var(--text-size-meta);
+  font-family: var(--font-mono); margin: 0.25rem 0 0;
+}
+
+/* --- Faits techniques du run --------------------------------------------- */
+.run-facts-title {
+  margin: var(--space-6) 0 var(--space-1);
+  padding-top: var(--space-4); border-top: 1px solid var(--border);
+}
+
+/* --- Santé du run --------------------------------------------------------- */
+.health-summary {
+  border: 1px solid var(--border); border-left: 3px solid var(--status-available);
+  border-radius: var(--radius-md); padding: var(--space-4);
+  background: var(--surface-raised); margin: var(--space-3) 0;
+}
+/* La couleur double la phrase, elle ne la remplace pas : le titre dit déjà ce
+ * qui attend une décision. */
+.health-summary.is-attention { border-left-color: var(--status-warning); }
+.health-summary h3 { margin: 0 0 var(--space-2); }
+.health-summary p { margin: 0; color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6; max-width: 70ch; }
+
+/* --- Responsive ----------------------------------------------------------- */
+@media (max-width: 1280px) {
+  .runs-panel { flex: 0 0 264px; }
+}
+@media (max-width: 1024px) {
+  .layout { flex-direction: column; }
+  .runs-panel { flex: 0 0 auto; align-self: auto; }
+  .detail { padding: var(--space-4); }
+  .expert-cards { grid-template-columns: 1fr; }
+  .gov-grid { grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-3); }
+  .history-entry { grid-template-columns: 4.5rem 1fr; gap: var(--space-2); }
+  .facts { grid-template-columns: 1fr; gap: 0.15rem; }
+  .facts dt { margin-top: var(--space-2); }
+}
+
+/* Le mouvement n'est jamais porteur d'information ici : le retirer ne retire
+ * rien. */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+
+/* ==========================================================================
+ * V-05 — contrôles natifs dans le thème sombre
+ *
+ * Aucune règle ne visait `input`, `textarea` ni `select` : le navigateur leur
+ * appliquait donc son propre thème clair, et un champ blanc apparaissait au
+ * milieu d'un écran sombre. Ces règles habillent les contrôles EXISTANTS ;
+ * aucun widget personnalisé n'est introduit, et le comportement natif — dont
+ * l'accessibilité clavier — reste celui du navigateur.
+ * ========================================================================== */
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  min-height: var(--control-h);
+  max-width: 100%;
+}
+
+textarea { min-height: 5rem; line-height: 1.55; resize: vertical; }
+
+/* Les cases et les boutons radio gardent leur boîte native : leur donner un
+ * fond et une bordure les rendrait illisibles. Seule la teinte de l'accent est
+ * indiquée au navigateur, qui dessine le reste. */
+input[type="checkbox"],
+input[type="radio"] {
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  accent-color: var(--accent);
+}
+
+input::placeholder,
+textarea::placeholder { color: var(--text-muted); opacity: 1; }
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+  border-color: var(--accent);
+}
+
+/* Le menu déroulant natif se peint depuis la page : sans cela, ses options
+ * restaient claires sur certaines plateformes. */
+select option { background: var(--surface-raised); color: var(--text); }
+
+input:disabled,
+textarea:disabled,
+select:disabled { opacity: 0.55; cursor: not-allowed; }
+
+
+/* V-04 — repère technique du fil : présent, positionné, discret. */
+.thread-technical-marker {
+  margin: var(--space-2) 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+
+/* V-12 — repli des événements techniques de l'Historique.
+ *
+ * Le filtre agit sur la VISIBILITÉ, jamais sur la composition de la liste :
+ * les entrées restent à leur place, et les révéler ne peut pas les réordonner. */
+.history[data-hide-technical] > .history-entry.is-technical { display: none; }
+
+
+/* ==========================================================================
+ * V-09 — largeur d'écriture humaine
+ *
+ * `workspace width ≠ editorial writing width`. Un champ qui s'étire sur toute
+ * la largeur du poste de travail donne des lignes de 160 caractères : on perd
+ * le début de la ligne suivante en la cherchant. Les champs OÙ L'ON ÉCRIT sont
+ * ramenés à une largeur de lecture ; les tables et les listes structurées
+ * gardent l'espace, parce qu'elles se balayent au lieu de se lire.
+ * ========================================================================== */
+
+.send-content,
+.controversy-statement-input,
+.evidence-register textarea,
+.evidence-register input[type="text"],
+.reconciliation-content,
+.reconciliation-provenance,
+.start-prompt {
+  width: 100%;
+  max-width: var(--width-editorial);
+}
+
+/* ==========================================================================
+ * V-08 — les quatre régions du Dossier
+ *
+ * Controverses · Matériaux · Adductions · Réconciliation. Elles existaient déjà
+ * comme titres de même rang, mais rien ne les séparait à l'œil : un filet et
+ * une respiration suffisent. Aucune carte décorative, aucune boîte.
+ * ========================================================================== */
+
+/* Les quatre titres, où qu'ils vivent : deux sont des enfants directs de la
+ * section, deux sont enveloppés par le conteneur qui délimite leur version. */
+#section-runtime > h3,
+#section-runtime > section.evidence > h3,
+#section-runtime > section.reconciliation > h3 {
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+/* La première région n'a pas de voisine au-dessus : pas de filet non plus. */
+#section-runtime > .dossier-nav + h3,
+#section-runtime > section.evidence:first-child > h3:first-child {
+  margin-top: var(--space-4);
+  padding-top: 0;
+  border-top: 0;
+}
+
+
+/* VIS-04 — label visible d'un champ de saisie. */
+.field-label {
+  display: block;
+  margin: var(--space-4) 0 var(--space-1);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.field-label + .field-hint { margin-top: 0; margin-bottom: var(--space-2); }
