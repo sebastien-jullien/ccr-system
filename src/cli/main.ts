@@ -202,9 +202,10 @@ Usage :
 
   ccr propose --target <ctv_id> --scope-kind <SUBSET|WHOLE> --expert <slot>
              [--scope <ctve,…>] [--run <run_id>] [--runs-dir <répertoire>]
-             Demande une proposition assistée par modèle. La porte publique est
-             fermée tant que le micro-gate fournisseur n'a pas rendu son
-             verdict : la commande le dit sans appeler aucun moteur.
+             Demande une proposition assistée par modèle. Le geste est humain :
+             rien ne le déclenche automatiquement. Le moteur est celui que le
+             manifest lie à l'expert nommé — il ne se choisit pas en ligne de
+             commande. Une proposition n'est jamais une décision.
 
   ccr decide (<texte> | --file <fichier>) [--run <run_id>] [--runs-dir <rép.>]
              Enregistre une décision humaine. Ne la transmet à aucun agent.
