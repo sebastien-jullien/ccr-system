@@ -1,0 +1,5 @@
+# Sorties de banc d'essai — dérivées d'une exécution, jamais versionnées.
+observations/generated/
+
+# Dépendances éventuelles d'un poste local. La fixture n'en déclare aucune.
+node_modules/
