@@ -218,7 +218,7 @@ test('5–8 · un run natif est servi par les moteurs natifs, sur le même vocab
     // 6 · SEND vers un ExpertSlot.
     const send = capture();
     assert.equal(await runCli(['send', 'author', 'précision'], { deps: h.deps, io: send }), 0, send.errorText());
-    assert.ok(send.text().includes('--- AUTHOR (codex-1) ---'), 'la réponse est nommée par son slot');
+    assert.ok(send.text().includes('--- AUTHOR (claude-1) ---'), 'la réponse est nommée par son slot');
     const journal = await nativeJournal(h.runsDir, runId);
     assert.ok(journal.includes('"target_expert_slot_id":"author"'));
     assert.equal(journal.includes('"actor":"claude"'), false, 'aucun acteur fournisseur');
@@ -240,9 +240,9 @@ test('5–8 · un run natif est servi par les moteurs natifs, sur le même vocab
       0,
       handoff.errorText(),
     );
-    assert.ok(handoff.text().includes('Handoff « challenger » (claude) terminé'));
+    assert.ok(handoff.text().includes('Handoff « challenger » (codex) terminé'));
     assert.ok(handoff.text().includes('NOT CONTROLLED / NOT MEASURED'));
-    assert.deepEqual(h.interactives(), ['claude:claude-1']);
+    assert.deepEqual(h.interactives(), ['codex:codex-1']);
 
     // 8 · le status natif vient de la projection 2D.
     const status = capture();
@@ -261,7 +261,10 @@ test('5–8 · un run natif est servi par les moteurs natifs, sur le même vocab
 
 test('9–13 · les quatre permutations de moteurs sont créables, defaults compris', async () => {
   const cases: readonly (readonly [readonly string[], string, string])[] = [
-    [[], 'codex', 'claude'],
+    // Sans option : la convention de liaison par défaut du produit.
+    [[], 'claude', 'codex'],
+    // La liaison inverse reste entièrement exprimable — un défaut n'est pas un couplage.
+    [['--author-provider', 'codex', '--challenger-provider', 'claude'], 'codex', 'claude'],
     [['--author-provider', 'claude', '--challenger-provider', 'codex'], 'claude', 'codex'],
     [['--author-provider', 'claude', '--challenger-provider', 'claude'], 'claude', 'claude'],
     [['--author-provider', 'codex', '--challenger-provider', 'codex'], 'codex', 'codex'],
@@ -343,12 +346,15 @@ test('17–22 · les alias fournisseur suivent la règle 0/1/2, sans seconde ré
     const runId = await startNative(mixed);
     const send = capture();
     assert.equal(await runCli(['send', 'claude', 'via alias'], { deps: mixed.deps, io: send }), 0);
-    assert.ok(send.text().includes('--- CHALLENGER (claude-1) ---'), 'claude → challenger');
+    assert.ok(send.text().includes('--- AUTHOR (claude-1) ---'), 'claude → author');
 
     await forceNativeState(mixed.runsDir, runId, { state: 'PAUSED', control: 'HUMAN' });
     const handoff = capture();
     assert.equal(await runCli(['handoff', 'codex'], { deps: mixed.deps, io: handoff }), 0);
-    assert.ok(handoff.text().includes('Handoff « author » (codex) terminé'), 'codex → author');
+    assert.ok(
+      handoff.text().includes('Handoff « challenger » (codex) terminé'),
+      'codex → challenger',
+    );
   } finally {
     await mixed.cleanup();
   }

@@ -230,7 +230,7 @@ rôle d'expert    author | challenger    identité du protocole
 fournisseur      le moteur qui l'exécute    affectation technique
 ```
 
-Les moteurs actuellement implémentés sont **Claude Code** et **Codex**. Ce sont des fournisseurs, pas des rôles : rien n'associe un moteur donné à l'Auteur ou au Challenger. Par défaut `ccr start` affecte Codex à l'Auteur et Claude au Challenger, et les deux options de la commande vous laissent en décider autrement.
+Les moteurs actuellement implémentés sont **Claude Code** et **Codex**. Ce sont des fournisseurs, pas des rôles : rien n'associe un moteur donné à l'Auteur ou au Challenger. Par défaut `ccr start` affecte Claude à l'Auteur et Codex au Challenger — une simple convention de liaison, que les deux options de la commande vous laissent remplacer entièrement.
 
 Les deux rôles peuvent partager le même moteur — à une condition absolue : **les sessions natives restent distinctes**. Une conversation unique pour deux rôles produirait une indépendance fictive.
 

@@ -195,10 +195,10 @@ test('A1–A4 · les quatre permutations démarrent dans l’ordre AUTHOR puis C
   }
 });
 
-test('A · le défaut produit est Codex auteur, Claude contradicteur', async () => {
+test('A · le défaut produit est Claude auteur, Codex contradicteur', async () => {
   const dir = await makeTempDir('ccr-1c-default-');
   try {
-    assert.deepEqual(DEFAULT_NATIVE_BINDINGS, { author: 'codex', challenger: 'claude' });
+    assert.deepEqual(DEFAULT_NATIVE_BINDINGS, { author: 'claude', challenger: 'codex' });
     const h = harness(path.join(dir, 'runs'));
     const result = await startNativeRun(h.deps, {
       title: 'T',
@@ -206,8 +206,10 @@ test('A · le défaut produit est Codex auteur, Claude contradicteur', async () 
       prompt: PROMPT,
       runtimeConfig: nativeRuntime(DEFAULT_NATIVE_BINDINGS),
     });
-    assert.deepEqual(h.callOrder.map((call) => call.provider), ['codex', 'claude']);
-    assert.equal(result.manifest.experts.author.provider, 'codex');
+    // L'ordre d'appel vient des slots, jamais des fournisseurs : AUTHOR
+    // d'abord, quel que soit le moteur qui lui est lié.
+    assert.deepEqual(h.callOrder.map((call) => call.provider), ['claude', 'codex']);
+    assert.equal(result.manifest.experts.author.provider, 'claude');
   } finally {
     await removeTempDir(dir);
   }
@@ -595,11 +597,14 @@ test('E · l’ordre de durabilité est observable, et il est celui du START V2'
     const runsDir = path.join(dir, 'runs');
     const observed: string[] = [];
 
+    // L'observation porte sur le PREMIER appel, c'est-à-dire celui du slot
+    // AUTHOR. Elle est donc attachée à l'adapter que le défaut lie à AUTHOR ;
+    // ce qui est observé reste slot-first, jamais fournisseur-first.
     const adapters = {
-      claude: createFakeAdapter({ kind: 'claude', startSessionIds: ['C1'] }),
-      codex: createFakeAdapter({
-        kind: 'codex',
-        startSessionIds: ['X1'],
+      codex: createFakeAdapter({ kind: 'codex', startSessionIds: ['X1'] }),
+      claude: createFakeAdapter({
+        kind: 'claude',
+        startSessionIds: ['C1'],
         // Observation **pendant** l'appel : ce qui est déjà durable à cet instant.
         onCall: async () => {
           const runId = (await readdir(runsDir))[0] ?? '';

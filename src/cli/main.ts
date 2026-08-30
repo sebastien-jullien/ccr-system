@@ -97,7 +97,7 @@ Usage :
              [--max-invocations <entier >= 0>]
              Crée un run V2.1 : deux experts nommés « author » et
              « challenger », chacun exécuté par le moteur choisi. Par défaut
-             author=codex et challenger=claude. Les deux experts peuvent
+             author=claude et challenger=codex. Les deux experts peuvent
              partager le même moteur.
              Compatibilité : --claude-role / --codex-role restent acceptés
              lorsqu'ils décrivent exactement un author et un challenger. Ils

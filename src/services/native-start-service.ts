@@ -81,13 +81,18 @@ export interface NativeExpertBindings {
 }
 
 /**
- * Défaut produit, repris du comportement V2 réel (`run-service.ts:447-448`).
+ * Défaut produit.
  *
  * Il remplit les deux bindings ; il ne les rend pas facultatifs.
+ *
+ * C'est une **convention de liaison par défaut**, et rien d'autre : aucun
+ * fournisseur n'est intrinsèquement auteur ou contradicteur.
+ * `--author-provider` et `--challenger-provider` la remplacent entièrement, y
+ * compris pour affecter le même fournisseur aux deux slots.
  */
 export const DEFAULT_NATIVE_BINDINGS: NativeExpertBindings = {
-  author: 'codex',
-  challenger: 'claude',
+  author: 'claude',
+  challenger: 'codex',
 };
 
 /**
