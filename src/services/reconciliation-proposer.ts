@@ -87,6 +87,7 @@ import {
 import { runtimeSettingsOf } from './native-start-service.ts';
 import type { RunRuntimeSettings } from './run-service.ts';
 import { withNativeMutation } from './native-mutation-boundary.ts';
+import { commitNegativeOutcome } from './invocation-outcome-writer.ts';
 
 // ==========================================================================
 // SECTION 1/3 — Parseur strict, PUR
@@ -812,6 +813,19 @@ export async function proposeReconciliationByModel(
   } catch (error) {
     // L'invocation reste un fait durable. Aucun usage n'est inventé, aucune
     // proposition n'est écrite, et aucune seconde tentative n'a lieu.
+    //
+    // L'issue est commitée AVANT d'être rendue. `UNEXPECTED` reste la valeur
+    // publique du résultat — inchangée —, mais n'est pas persistée : côté
+    // durable, un code inconnu s'omet plutôt que de se déguiser en cause.
+    await commitNegativeOutcome(
+      deps,
+      request.runId,
+      'v5-propose-model-outcome',
+      plan.invocationId,
+      isCcrError(error)
+        ? { kind: 'V5_PROVIDER_FAILED', error_code: error.code }
+        : { kind: 'V5_PROVIDER_FAILED' },
+    );
     return {
       kind: 'PROVIDER_FAILED',
       invocation_id: plan.invocationId,
@@ -836,6 +850,13 @@ export async function proposeReconciliationByModel(
   // ---- ANALYSE. La section 1/3 fait autorité, et elle est la seule.
   const parsed = parseReconciliationProposals(turn.content, request.target_controversy_id);
   if (parsed.outcome === 'INVALID') {
+    // Le vocabulaire de motif V5 est conservé tel quel : ni traduit, ni fusionné
+    // avec ceux de V3 et V4, qui comptent d'autres valeurs.
+    await commitNegativeOutcome(deps, request.runId, 'v5-propose-model-outcome', plan.invocationId, {
+      kind: 'V5_INVALID_OUTPUT',
+      reason: parsed.reason,
+      at: parsed.at,
+    });
     return {
       kind: 'INVALID_OUTPUT',
       invocation_id: plan.invocationId,
@@ -860,6 +881,11 @@ export async function proposeReconciliationByModel(
   });
 
   if (persisted.kind === 'REFUSED') {
+    await commitNegativeOutcome(deps, request.runId, 'v5-propose-model-outcome', plan.invocationId, {
+      kind: 'V5_REVALIDATION_REFUSED',
+      check: persisted.check as ProposalRevalidationCheck,
+      detail: persisted.detail as string,
+    });
     return {
       kind: 'REVALIDATION_REFUSED',
       invocation_id: plan.invocationId,

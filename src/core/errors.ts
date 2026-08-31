@@ -104,6 +104,26 @@ export type CcrErrorCode =
    */
   | 'INVOCATION_LEDGER_WRITE_FAILED'
   /**
+   * L'issue négative terminale n'a pas pu être persistée.
+   *
+   * Panne de **stockage CCR**, distincte de l'issue de domaine qu'elle empêche
+   * de rendre. `INVOCATION_LEDGER_WRITE_FAILED` n'est pas réemployé : il nomme
+   * l'échec d'une **autre** source, et le détourner mentirait sur celle qui a
+   * échoué.
+   *
+   * Conséquence gelée par le contrat de durabilité : le résultat négatif
+   * d'origine n'est **pas** rendu comme s'il avait été durablement commité.
+   * Aucun rejeu, aucune réinvocation, aucun remboursement de quota.
+   */
+  | 'INVOCATION_OUTCOME_WRITE_FAILED'
+  /**
+   * Une issue négative durable existe déjà pour cette invocation.
+   *
+   * Au plus une par `invocation_id`, et la première demeure : une issue
+   * enregistrée n'est jamais remplacée, ni réécrite sémantiquement.
+   */
+  | 'INVOCATION_OUTCOME_ALREADY_RECORDED'
+  /**
    * `invocation-policy.json` illisible ou non conforme (`V2.2-IMP-07`).
    *
    * Une politique **présente mais invalide** n'est jamais requalifiée en

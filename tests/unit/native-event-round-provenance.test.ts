@@ -825,6 +825,14 @@ const NATIVE_ENGINE_FILES = [
   // V5-S14 : la CLI V5 compose l'instantane qu'elle affiche, comme
   // `cli/native-dispatch.ts` deja inscrit. Elle ne decide rien : elle rend.
   'cli/reconciliation-dispatch.ts',
+  // Durabilite de l'issue negative : la projection d'issues d'invocation joint
+  // l'engagement, le fait negatif durable et la preuve de succes. Sa dependance
+  // native est un import de TYPE — `NativeCcrEvent` — parce que la correlation
+  // d'un `assistant_response` natif passe par le `prompt_sent` que le dispatch
+  // nomme et que la reponse cite ; aucune autre voie ne les relie. Fonction
+  // pure : elle n'ouvre aucun fichier, n'ecrit rien — pas meme un succes — et
+  // ne touche pas `rounds/`.
+  'services/invocation-outcome-read-model.ts',
 ];
 
 test('28 · aucun service historique ne connaît les formats natifs, et personne n’écrit `rounds/`', async () => {

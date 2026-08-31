@@ -64,6 +64,10 @@ import type { RunPaths } from '../store/layout.ts';
 import type { AgentAdapters, RunRuntimeSettings, RunServiceDeps } from './run-service.ts';
 import type { InvocationDispatchRecord } from '../core/usage-governance.ts';
 import { initializeInvocationLedger, openInvocationLedger } from '../store/invocation-ledger.ts';
+import { appendInvocationOutcome } from '../store/invocation-outcome-store.ts';
+import { nativeProcessFailedOutcome } from '../core/invocation-outcome.ts';
+import type { NativeFailureDetail } from '../core/invocation-outcome.ts';
+import { withNativeMutation } from './native-mutation-boundary.ts';
 import { assertInvocationQuotaAvailable } from './invocation-quota.ts';
 import { invocationPolicyDocument } from '../core/invocation-policy.ts';
 import { openInvocationPolicyStore } from '../store/invocation-policy-store.ts';
@@ -241,6 +245,27 @@ export interface ManifestRef {
   manifest: NativeRunManifest;
 }
 
+/**
+ * Sérialisation durable **possédée par l'appelant**.
+ *
+ * `initializeNativeSlot` est partagé par `START`, qui ne détient aucun verrou de
+ * run, et par la reprise d'initialisation, qui en détient déjà un. Le verrou
+ * n'étant **pas réentrant** — publication par lien dur exclusif, aucun compteur
+ * de récursion —, la fonction partagée ne peut pas trancher elle-même : elle
+ * l'imbriquerait chez l'un des deux et échouerait en `RUN_ALREADY_LOCKED`.
+ *
+ * La décision appartient donc à l'appelant, seul à savoir ce qu'il détient :
+ *
+ * ```text
+ * START     ouvre une frontière de mutation COURTE autour du corps
+ * REPRISE   exécute le corps directement, sous le verrou déjà tenu
+ * ```
+ *
+ * `initializeNativeSlot` reste **agnostique au verrou** : il n'en acquiert
+ * aucun, n'en teste aucun, et ne connaît pas la différence entre ses appelants.
+ */
+export type NativeSerialize = <T>(command: string, body: () => Promise<T>) => Promise<T>;
+
 export interface NativeContext {
   readonly paths: RunPaths;
   readonly events: NativeEventStore;
@@ -248,6 +273,14 @@ export interface NativeContext {
   readonly now: () => Date;
   readonly manifestRef: ManifestRef;
   state: NativeRunStateDocument;
+  /**
+   * Sérialisation possédée par l'appelant.
+   *
+   * Champ **obligatoire** : un défaut implicite laisserait `START` écrire son
+   * engagement hors de toute sérialisation — précisément le défaut que cette
+   * capacité existe pour corriger.
+   */
+  readonly serialize: NativeSerialize;
   /** Gouvernance d'usage (V2.2-IMP-04). Absente, aucun journal n'est écrit. */
   readonly governance?: NativeStartGovernance;
 }
@@ -304,6 +337,7 @@ function errorDetails(error: unknown): Record<string, unknown> {
   if (error instanceof CcrError) return { code: error.code, ...error.details };
   return {};
 }
+
 
 /**
  * Un tour d'initialisation, pour un slot.
@@ -376,80 +410,20 @@ export async function initializeNativeSlot(
     throw refusal;
   }
 
-  const promptEvent = await ctx.events.append({
-    round: ctx.state.round,
-    actor: 'human',
-    type: 'prompt_sent',
-    target_expert_slot_id: slot,
-    content: prompt,
-    timestamp: ctx.now().toISOString(),
-  });
-
-  ctx.state = await persistNativeStateUpdate(
-    ctx.paths,
-    ctx.state,
-    {
-      state: 'WAITING_AGENT',
-      activeExpertSlot: slot,
-      lastEventId: promptEvent.event_id,
-      pendingOperation: {
-        kind: 'initialization',
-        expert_slot: slot,
-        round: ctx.state.round,
-        prompt_event_id: promptEvent.event_id,
-        session_id: null,
-        return_state: 'FAILED_INITIALIZATION',
-        return_control: 'AUTOMATION',
-        started_at: ctx.now().toISOString(),
-      },
-    },
-    ctx.now(),
-  );
-
-  const fail = async (error: unknown): Promise<never> => {
-    const failureEvent = await ctx.events.append({
-      round: ctx.state.round,
-      actor: 'system',
-      type: 'process_failed',
-      target_expert_slot_id: slot,
-      content: error instanceof Error ? error.message : String(error),
-      details: errorDetails(error),
-      based_on: [promptEvent.event_id],
-      timestamp: ctx.now().toISOString(),
-    });
-    ctx.state = await persistNativeStateUpdate(
-      ctx.paths,
-      ctx.state,
-      {
-        state: 'FAILED_INITIALIZATION',
-        activeExpertSlot: null,
-        lastEventId: failureEvent.event_id,
-        control: 'HUMAN',
-        pendingOperation: null,
-      },
-      ctx.now(),
-    );
-    throw error;
-  };
-
   /**
-   * Ferme un slot dont CCR sait qu'aucun fournisseur n'a été appelé
-   * (V2.2-IMP-04).
-   *
-   * **Aucun événement neuf**, et c'est le résultat central du preflight : la
-   * classification d'initialisation ne consulte que la session du manifest, le
-   * `session_created` et la réponse initiale durable. Un `prompt_sent` orphelin
-   * ne l'intéresse pas. Il suffit donc de libérer le contexte pour que le slot
-   * redevienne `MISSING`, donc `CLEAN_MISSING` — honnêtement, et sans inventer
-   * de sémantique.
+   * Fermeture d'une tentative dont CCR sait qu'aucun fournisseur n'a été appelé
+   * (`V2.2-IMP-04`).
    *
    * `process_failed` serait un mensonge : il porte le slot visé, et
    * attribuerait à l'expert une panne de stockage de CCR.
+   *
+   * Exécutée **sous la même sérialisation** que les faits qu'elle referme : la
+   * sortir du verrou rouvrirait la fenêtre que celui-ci existe pour fermer.
    */
-  const abortBeforeProvider = async (cause: unknown): Promise<never> => {
+  const abortBeforeProvider = async (cause: unknown, lastEventId: string): Promise<never> => {
     let cleanup: Record<string, unknown> | undefined;
     try {
-      await releaseSlotWithoutAttempt(ctx, promptEvent.event_id);
+      await releaseSlotWithoutAttempt(ctx, lastEventId);
     } catch (cleanupError) {
       cleanup = errorDetails(cleanupError);
     }
@@ -469,32 +443,139 @@ export async function initializeNativeSlot(
     );
   };
 
-  // ---- Frontière autoritaire (V2.2-IMP-04).
+  // ---- Mutation courte AVANT fournisseur.
   //
-  // `session_id` est **absent** : c'est `adapter.start` qui crée la session, et
-  // retarder l'engagement pour l'attendre reviendrait à écrire le fait après
-  // l'appel qu'il est censé précéder. Ni `round` ni `source_event_id` non plus :
-  // une position initiale n'est pas un transfert.
-  const governance = ctx.governance;
-  let dispatch: InvocationDispatchRecord | undefined;
-  if (governance !== undefined) {
-    try {
-      const invocations = await governance.openInvocations(ctx.paths, governance.runId);
-      dispatch = await invocations.append(
+  // Intention, contexte de reprise et engagement durable forment **une seule**
+  // mutation sérialisée. Auparavant, ces trois écritures traversaient une
+  // fenêtre non sérialisée : deux handles de ledger ouverts concurremment
+  // dérivent la même séquence à l'ouverture, l'incrémentent localement sans
+  // relire le disque, et allouent alors le même `invocation_id`. Le doublon
+  // n'était détecté qu'à la relecture suivante, qui déclarait le journal
+  // entier invalide.
+  //
+  // La garantie d'unicité vient de la sérialisation de l'opération, jamais de
+  // la variable de séquence locale du handle ni du format du journal.
+  //
+  // L'appel fournisseur reste **hors** de cette section : le verrou ne couvre
+  // pas une latence de fournisseur.
+  const { promptEvent, dispatch } = await ctx.serialize('native-start-dispatch', async () => {
+    const promptEventInner = await ctx.events.append({
+      round: ctx.state.round,
+      actor: 'human',
+      type: 'prompt_sent',
+      target_expert_slot_id: slot,
+      content: prompt,
+      timestamp: ctx.now().toISOString(),
+    });
+
+    ctx.state = await persistNativeStateUpdate(
+      ctx.paths,
+      ctx.state,
+      {
+        state: 'WAITING_AGENT',
+        activeExpertSlot: slot,
+        lastEventId: promptEventInner.event_id,
+        pendingOperation: {
+          kind: 'initialization',
+          expert_slot: slot,
+          round: ctx.state.round,
+          prompt_event_id: promptEventInner.event_id,
+          session_id: null,
+          return_state: 'FAILED_INITIALIZATION',
+          return_control: 'AUTOMATION',
+          started_at: ctx.now().toISOString(),
+        },
+      },
+      ctx.now(),
+    );
+
+    // ---- Frontière autoritaire (V2.2-IMP-04).
+    //
+    // `session_id` est **absent** : c'est `adapter.start` qui crée la session,
+    // et retarder l'engagement pour l'attendre reviendrait à écrire le fait
+    // après l'appel qu'il est censé précéder. Ni `round` ni `source_event_id`
+    // non plus : une position initiale n'est pas un transfert.
+    const governanceInner = ctx.governance;
+    let dispatchInner: InvocationDispatchRecord | undefined;
+    if (governanceInner !== undefined) {
+      try {
+        const invocations = await governanceInner.openInvocations(ctx.paths, governanceInner.runId);
+        dispatchInner = await invocations.append(
+          {
+            identity: { generation: 'NATIVE_V21_EXECUTION', expert_slot: slot, provider: binding.provider },
+            trigger_kind: governanceInner.trigger,
+            prompt_event_id: promptEventInner.event_id,
+            ...(governanceInner.correlation.operationId === undefined
+              ? {}
+              : { operation_id: governanceInner.correlation.operationId }),
+          },
+          ctx.now(),
+        );
+      } catch (error) {
+        return abortBeforeProvider(error, promptEventInner.event_id);
+      }
+    }
+
+    return { promptEvent: promptEventInner, dispatch: dispatchInner };
+  });
+
+  /**
+   * Ferme une tentative après un échec déterministe **postérieur** à
+   * l'engagement.
+   *
+   * Trois faits durables, dans une seule mutation sérialisée : l'événement
+   * `process_failed`, la libération du contexte, et l'issue négative
+   * d'invocation. L'ordre n'est pas indifférent — l'issue est commitée
+   * **avant** que l'erreur ne soit relancée vers la surface produit, ce qu'exige
+   * le contrat de durabilité.
+   *
+   * Si le commit de l'issue échoue, c'est la défaillance de persistance qui
+   * remonte, et non l'erreur d'origine : rendre celle-ci laisserait croire que
+   * la garantie a tenu.
+   *
+   * `detail` n'est fourni que par le site qui **construit** le fait natif :
+   * CCR en connaît alors la structure parce qu'il l'a écrite. Une erreur venue
+   * de l'adaptateur n'en reçoit aucun — son sac de diagnostic est propre au
+   * fournisseur, et reste dans `process_failed.details`.
+   */
+  const fail = async (error: unknown, detail?: NativeFailureDetail): Promise<never> => {
+    await ctx.serialize('native-start-failure', async () => {
+      const failureEvent = await ctx.events.append({
+        round: ctx.state.round,
+        actor: 'system',
+        type: 'process_failed',
+        target_expert_slot_id: slot,
+        content: error instanceof Error ? error.message : String(error),
+        details: errorDetails(error),
+        based_on: [promptEvent.event_id],
+        timestamp: ctx.now().toISOString(),
+      });
+      ctx.state = await persistNativeStateUpdate(
+        ctx.paths,
+        ctx.state,
         {
-          identity: { generation: 'NATIVE_V21_EXECUTION', expert_slot: slot, provider: binding.provider },
-          trigger_kind: governance.trigger,
-          prompt_event_id: promptEvent.event_id,
-          ...(governance.correlation.operationId === undefined
-            ? {}
-            : { operation_id: governance.correlation.operationId }),
+          state: 'FAILED_INITIALIZATION',
+          activeExpertSlot: null,
+          lastEventId: failureEvent.event_id,
+          control: 'HUMAN',
+          pendingOperation: null,
         },
         ctx.now(),
       );
-    } catch (error) {
-      return abortBeforeProvider(error);
-    }
-  }
+
+      // Sans engagement, il n'y a aucune invocation à laquelle rattacher une
+      // issue : le fait n'existe pas, et rien n'est inventé pour le combler.
+      if (dispatch !== undefined) {
+        await appendInvocationOutcome(
+          ctx.paths,
+          dispatch.invocation_id,
+          nativeProcessFailedOutcome(error, detail),
+          ctx.now().toISOString(),
+        );
+      }
+    });
+    throw error;
+  };
 
   let turn: AgentTurnResult;
   try {
@@ -513,6 +594,15 @@ export async function initializeNativeSlot(
           "conversations vient d'être ouverte : la session n'est attribuée à personne.",
         { details: { slot, provider: binding.provider, session_id: turn.sessionId } },
       ),
+      // Le fait durable conserve ce que l'événement natif porte déjà : quel
+      // slot, quel moteur, et **quelle** session est en cause. Réduire cette
+      // collision à son seul code perdrait l'identité du conflit.
+      {
+        code: 'SESSION_ID_COLLISION',
+        expert_slot: slot,
+        provider: binding.provider,
+        session_id: turn.sessionId,
+      },
     );
   }
 
@@ -562,14 +652,15 @@ export async function initializeNativeSlot(
   // Plus strict que STEP et SEND, et délibérément : entre la réponse et
   // `session_created` se trouve la liaison de la session au manifest, l'écriture
   // la plus critique du chemin. Rien d'accessoire ne s'intercale devant elle.
-  if (governance !== undefined && dispatch !== undefined) {
+  const usageGovernance = ctx.governance;
+  if (usageGovernance !== undefined && dispatch !== undefined) {
     const recorder = createUsageRecorder(
-      await governance.openUsage(ctx.paths, governance.runId),
+      await usageGovernance.openUsage(ctx.paths, usageGovernance.runId),
       dispatch.invocation_id,
       ctx.now,
     );
     await recordTurnUsage(recorder, turn);
-    governance.warnings.push(...recorder.warnings);
+    usageGovernance.warnings.push(...recorder.warnings);
   }
 
   return {
@@ -652,6 +743,15 @@ export async function startNativeRun(
     now: () => deps.now(),
     manifestRef,
     state: buildInitialNativeState(paths.runId, 'READY', deps.now()),
+    // ---- Propriété de sérialisation — `START`.
+    //
+    // `startNativeRun` ne détient aucun verrou de run : `createRunDirectory`
+    // n'assure l'exclusivité que du **nom**, et le run est adressable dès
+    // l'écriture du manifest, donc bien avant la fin de l'initialisation.
+    // C'est donc ici, et nulle part ailleurs, que la frontière de mutation
+    // courte s'ouvre — autour du corps que le primitif partagé lui remet.
+    serialize: <T>(command: string, body: () => Promise<T>): Promise<T> =>
+      withNativeMutation({ runsDir: deps.runsDir, runId: paths.runId, command }, body),
     // Le run possède déjà son identité canonique : répertoire, manifest et
     // état sont écrits. Aucun journal de gouvernance n'existe avant ce point.
     governance: {

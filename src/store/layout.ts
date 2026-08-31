@@ -43,6 +43,19 @@ export interface RunPaths {
   readonly invocations: string;
   readonly usage: string;
   /**
+   * Document canonique des issues négatives terminales d'invocation.
+   *
+   * Additif et **hors révision de run**. Document **atomique**, jamais un
+   * journal : une queue partielle stable rendrait illisibles des faits déjà
+   * commités, ce que le contrat de durabilité interdit.
+   *
+   * Son absence est l'état normal d'un run sans issue négative, et de tout run
+   * antérieur à cette source. Absence et document vide y commandent la même
+   * sémantique — aucune conclusion —, raison pour laquelle aucun marqueur de
+   * naissance n'existe.
+   */
+  readonly invocationOutcomes: string;
+  /**
    * Politique de quota d'invocations du run (CCR V2.2, `V2.2-IMP-07`).
    *
    * Additive et **hors révision**, comme les deux journaux. Son absence est le
@@ -103,6 +116,7 @@ export function runPaths(runsDir: string, runId: string): RunPaths {
     artifactsDir: path.join(root, 'artifacts'),
     invocations: path.join(root, 'invocations.jsonl'),
     usage: path.join(root, 'usage.jsonl'),
+    invocationOutcomes: path.join(root, 'invocation-outcomes.json'),
     invocationPolicy: path.join(root, 'invocation-policy.json'),
     controversies: path.join(root, 'controversies.jsonl'),
     evidence: path.join(root, 'evidence.jsonl'),

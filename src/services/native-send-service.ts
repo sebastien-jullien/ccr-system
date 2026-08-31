@@ -49,6 +49,9 @@ import type { NativeExpertTargetRef } from './native-target-resolver.ts';
 import { sendGuard } from '../core/run-guards.ts';
 import type { InvocationDispatchRecord } from '../core/usage-governance.ts';
 import { openInvocationLedger } from '../store/invocation-ledger.ts';
+import { appendInvocationOutcome } from '../store/invocation-outcome-store.ts';
+import { nativeProcessFailedOutcome } from '../core/invocation-outcome.ts';
+import type { NativeFailureDetail } from '../core/invocation-outcome.ts';
 import { openUsageLedger } from '../store/usage-ledger.ts';
 import { safeNativeSendRecoveryState } from './native-send-recovery-service.ts';
 import { createUsageRecorder, recordTurnUsage } from './usage-governance-writer.ts';
@@ -293,7 +296,11 @@ export async function sendNativeMessage(
       deps.now(),
     );
 
-    const fail = async (error: unknown): Promise<never> => {
+    // `detail` n'est fourni que par le site qui **construit** le fait natif :
+    // CCR en connaît alors la structure parce qu'il l'a écrite. Une erreur
+    // venue de l'adaptateur n'en reçoit aucun — son sac de diagnostic est
+    // propre au fournisseur, et reste dans `process_failed.details`.
+    const fail = async (error: unknown, detail?: NativeFailureDetail): Promise<never> => {
       const failureEvent = await events.append({
         round: state.round,
         actor: 'system',
@@ -319,6 +326,19 @@ export async function sendNativeMessage(
           lastEventId: failureEvent.event_id,
         },
         deps.now(),
+      );
+      // Issue négative durable, **avant** que l'erreur n'atteigne la surface
+      // produit. Ce corps s'exécute déjà sous le verrou de run : aucune reprise
+      // de verrou, qui échouerait — il n'est pas réentrant.
+      //
+      // L'événement `process_failed` demeure : transcript natif et issue
+      // d'invocation sont deux autorités distinctes, et la seconde ne remplace
+      // pas le premier.
+      await appendInvocationOutcome(
+        paths,
+        dispatch.invocation_id,
+        nativeProcessFailedOutcome(error, detail),
+        deps.now().toISOString(),
       );
       throw error;
     };
@@ -445,6 +465,15 @@ export async function sendNativeMessage(
             },
           },
         ),
+        // Le fait durable conserve les deux sessions : sans elles, « dérive de
+        // session » ne nomme plus de quelle conversation il s'agit.
+        {
+          code: 'AGENT_SESSION_MISMATCH',
+          expert_slot: target.expertSlot,
+          provider: target.provider,
+          expected_session_id: target.sessionId,
+          found_session_id: turn.sessionId,
+        },
       );
     }
 

@@ -799,6 +799,14 @@ export async function continueNativeInitialization(
         now: () => deps.now(),
         manifestRef,
         state,
+        // ---- Propriété de sérialisation — `RECOVERY_CONTINUE`.
+        //
+        // Le verrou de run est **déjà détenu** : tout ce corps s'exécute sous
+        // `withNativeRunLock`. Le reprendre échouerait — le verrou n'est pas
+        // réentrant, `link` rendrait `EEXIST`, et la liveness désignerait notre
+        // propre processus. Le corps du primitif partagé est donc exécuté
+        // directement, sous la sérialisation en cours.
+        serialize: <T>(_command: string, body: () => Promise<T>): Promise<T> => body(),
         // Chaque slot repris engage une **nouvelle** tentative : elle reçoit son
         // propre identifiant, et ne modifie jamais l'ancienne (V2.2-IMP-05).
         governance: {

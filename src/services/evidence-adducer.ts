@@ -60,6 +60,7 @@ import { projectControversyReadModel } from './controversy-read-model.ts';
 import { runtimeSettingsOf } from './native-start-service.ts';
 import type { RunRuntimeSettings } from './run-service.ts';
 import { withNativeMutation } from './native-mutation-boundary.ts';
+import { commitNegativeOutcome } from './invocation-outcome-writer.ts';
 
 // ==========================================================================
 // SECTION 1/3 — S7-A · Parseur strict de sortie modèle
@@ -1234,6 +1235,18 @@ export async function adduceMaterialByModel(
   } catch (error) {
     // L'invocation reste un fait durable. Aucune observation d'usage n'est
     // inventée, et surtout aucune adduction.
+    // Issue commitée AVANT d'être rendue. `UNEXPECTED` demeure la valeur
+    // publique du résultat, mais n'est jamais persistée : un code inconnu
+    // s'omet plutôt que de se déguiser en cause.
+    await commitNegativeOutcome(
+      deps,
+      request.runId,
+      'v4-adduce-model-outcome',
+      plan.invocationId,
+      error instanceof CcrError
+        ? { kind: 'V4_PROVIDER_FAILED', error_code: error.code }
+        : { kind: 'V4_PROVIDER_FAILED' },
+    );
     return {
       kind: 'PROVIDER_FAILED',
       invocation_id: plan.invocationId,
@@ -1260,6 +1273,13 @@ export async function adduceMaterialByModel(
   const parsed = parseAdductionProposals(turn.content);
   if (parsed.outcome === 'INVALID') {
     // Une sortie inexploitable a parfaitement pu consommer une invocation.
+    // Le vocabulaire de motif est celui de cette opération, conservé tel
+    // quel : il n'est ni traduit, ni fusionné avec ceux des autres familles.
+    await commitNegativeOutcome(deps, request.runId, 'v4-adduce-model-outcome', plan.invocationId, {
+      kind: 'V4_INVALID_OUTPUT',
+      reason: parsed.reason,
+      at: parsed.at,
+    });
     return {
       kind: 'INVALID_OUTPUT',
       invocation_id: plan.invocationId,
@@ -1283,6 +1303,13 @@ export async function adduceMaterialByModel(
   });
 
   if (persisted.kind === 'REFUSED') {
+    // Le contrôle V4 conserve son vocabulaire propre : il n'est pas ramené sur
+    // celui de V5, dont les quatre valeurs décrivent d'autres vérifications.
+    await commitNegativeOutcome(deps, request.runId, 'v4-adduce-model-outcome', plan.invocationId, {
+      kind: 'V4_REVALIDATION_REFUSED',
+      check: persisted.refusal.check,
+      detail: persisted.refusal.detail,
+    });
     return {
       kind: 'REVALIDATION_REFUSED',
       invocation_id: plan.invocationId,

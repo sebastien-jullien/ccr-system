@@ -78,6 +78,7 @@ import { recordDetectedRelations } from './controversy-service.ts';
 import { runtimeSettingsOf } from './native-start-service.ts';
 import type { RunRuntimeSettings } from './run-service.ts';
 import { withNativeMutation } from './native-mutation-boundary.ts';
+import { commitNegativeOutcome } from './invocation-outcome-writer.ts';
 
 // --------------------------------------------------------------------------
 // Version et borne
@@ -587,6 +588,18 @@ export async function detectControversyRelations(
   } catch (error) {
     // L'invocation reste un fait durable. Aucune observation d'usage n'est
     // inventée, et surtout aucune relation.
+    // Issue commitée AVANT d'être rendue. `UNEXPECTED` demeure la valeur
+    // publique du résultat, mais n'est jamais persistée : un code inconnu
+    // s'omet plutôt que de se déguiser en cause.
+    await commitNegativeOutcome(
+      deps,
+      request.runId,
+      'v3-detect-outcome',
+      plan.invocationId,
+      error instanceof CcrError
+        ? { kind: 'V3_PROVIDER_FAILED', error_code: error.code }
+        : { kind: 'V3_PROVIDER_FAILED' },
+    );
     return {
       kind: 'PROVIDER_FAILED',
       invocation_id: plan.invocationId,
@@ -613,6 +626,13 @@ export async function detectControversyRelations(
   // validation de schéma, aucun transtypage, aucune troncature.
   const parsed = parseDetectorOutput(turn.content);
   if (parsed.outcome === 'INVALID') {
+    // Le vocabulaire de motif est celui de cette opération, conservé tel
+    // quel : il n'est ni traduit, ni fusionné avec ceux des autres familles.
+    await commitNegativeOutcome(deps, request.runId, 'v3-detect-outcome', plan.invocationId, {
+      kind: 'V3_INVALID_OUTPUT',
+      reason: parsed.reason,
+      at: parsed.at,
+    });
     return {
       kind: 'INVALID_OUTPUT',
       invocation_id: plan.invocationId,

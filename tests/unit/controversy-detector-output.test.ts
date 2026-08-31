@@ -483,6 +483,10 @@ test('11 · T18 — le module est pur : ni fournisseur, ni ledger, ni disque, ni
     '../store/usage-ledger.ts',
     './controversy-read-model.ts',
     './controversy-service.ts',
+    // Durabilité de l'issue négative : une couture de persistance du dispatch,
+    // de la même famille que le service métier et l'écriture d'usage. Le
+    // parseur, lui, l'ignore — la garde de pureté ci-dessus le vérifie.
+    './invocation-outcome-writer.ts',
     './invocation-quota.ts',
     './native-mutation-boundary.ts',
     './native-start-service.ts',
