@@ -1,7 +1,8 @@
 # Marqueurs de contamination — aide d'inspection
 
-**Matériau de PRÉ-EXÉCUTION.** Aide d'inspection destinée à la lecture humaine
-des réponses de l'étape 1, une fois la traversée réellement exécutée.
+Aide d'inspection destinée à la lecture humaine des réponses de l'étape 1. Elle a
+été rédigée avant l'exécution, puis appliquée aux réponses réelles du run
+`CCR-20260830-001` — le constat figure en fin de page.
 
 ---
 
@@ -125,3 +126,32 @@ Lire les deux réponses d'étape 1. Pour chaque marqueur trouvé :
 Un marqueur trouvé ne disqualifie pas la réponse. Il change ce qu'elle établit :
 la position n'est plus une position formée sur le seul matériau fourni, et toute
 comparaison avant/après en dépend.
+
+---
+
+## Constat — run `CCR-20260830-001`
+
+Les marqueurs ci-dessus ont été recherchés dans les deux réponses d'étape 1
+(`evt_000003`, `evt_000006`).
+
+```text
+MARQUEURS DE HAUTE SPÉCIFICITÉ OBSERVÉS   AUCUN
+```
+
+Les deux réponses déclarent par ailleurs leur périmètre de lecture, comme le
+paquet le demandait.
+
+**Ce que ce constat n'établit pas :**
+
+```text
+AUCUN MARQUEUR VISIBLE  ≠  PREUVE D'ABSENCE D'ACCÈS
+```
+
+Un expert peut lire les mesures sans en citer aucune valeur, ou les reformuler
+dans ses propres mots. Cette inspection détecte une citation, jamais une
+consultation.
+
+C'est un **contrôle d'intégrité de la mise en scène** de la traversée : il
+vérifie que le matériau réservé n'apparaît pas là où il n'aurait pas dû être
+fourni. Ce n'est pas une expérience d'isolation cognitive, et il ne démontre
+aucune indépendance entre les deux réponses.

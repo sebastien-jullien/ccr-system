@@ -135,3 +135,14 @@ Les trois graines de charge sont des **répétitions descriptives**, non un
 
 Choisir l'arbitrage final demande un jugement humain, que les faits
 déterministes contraignent sans le remplacer.
+
+## 9. Traversée exécutée
+
+Cette fixture a servi de sujet à une traversée CCR réelle — le run canonique
+`CCR-20260830-001` : deux experts, les mêmes paquets à l'octet près, une
+contre-revue croisée, une controverse enregistrée, une décision humaine.
+
+Le compte rendu est un **extrait curé** ; le run brut n'est pas versionné ici :
+[`walkthrough/run-CCR-20260830-001.md`](walkthrough/run-CCR-20260830-001.md).
+
+Tout ce qui précède reste exécutable sans appeler aucun modèle.

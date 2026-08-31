@@ -347,6 +347,7 @@ Le contenu produit par un modèle est traité comme non fiable : il est analysé
 | [`docs/specs/reconciliation.md`](docs/specs/reconciliation.md) | contrat courant de la réconciliation |
 | [`docs/design-foundations.md`](docs/design-foundations.md) | les principes de conception dont CCR part |
 | [`docs/design-history.md`](docs/design-history.md) | histoire intellectuelle rétrospective de CCR |
+| [`examples/cache-showcase/walkthrough/run-CCR-20260830-001.md`](examples/cache-showcase/walkthrough/run-CCR-20260830-001.md) | traversée réelle de bout en bout — compte rendu curé d'un run canonique sur la fixture de conception de cache |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | comment contribuer |
 | [`SECURITY.md`](SECURITY.md) | signalement de vulnérabilité et frontières de confiance |
 | [`AGENTS.md`](AGENTS.md) · [`CLAUDE.md`](CLAUDE.md) | instructions de projet pour le travail assisté par IA |

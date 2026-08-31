@@ -1,7 +1,19 @@
-# Manifeste — matériau de traversée
+# Manifeste d'exécution — matériau de traversée
 
-**Matériau de PRÉ-EXÉCUTION.** Aucun paquet de ce répertoire n'a été fourni à un
-expert. Aucun run CCR n'existe. Aucun fournisseur n'a été appelé.
+**Manifeste d'exécution curé.** Les deux paquets de ce répertoire ont été
+formellement transmis à deux experts dans le run canonique `CCR-20260830-001`.
+Ce document relie ce qui avait été gelé à ce qui a été effectivement transmis.
+
+```text
+RUN CANONIQUE        CCR-20260830-001
+COMMIT D'EXÉCUTION   94bf3d02a9b12d234fea9d924ffe11c960967cc3
+RUN BRUT             NON VERSIONNÉ
+```
+
+Ce manifeste n'est **pas** un manifeste de run brut : il ne reproduit aucun
+journal. Il publie les empreintes des paquets transmis et des six réponses
+d'expert. Le récit de la traversée se lit dans
+[`run-CCR-20260830-001.md`](run-CCR-20260830-001.md).
 
 ---
 
@@ -50,10 +62,14 @@ author/challenger n'est émise à cette étape.
 ## STAGE_1_PACKET
 
 ```text
-path          examples/cache-showcase/walkthrough/stage-1-packet.md
-bytes         27 753
-sha256        cb45e21db5074de85b8fcf7152bfe78a12e6608eaf1f724148e2e8ac5805fb4f
+path            examples/cache-showcase/walkthrough/stage-1-packet.md
+bytes           27 753
+sha256          cb45e21db5074de85b8fcf7152bfe78a12e6608eaf1f724148e2e8ac5805fb4f
+transmis par    evt_000002 (author)  ·  evt_000005 (challenger)
 ```
+
+Les deux événements de prompt portent la même empreinte que le fichier : le
+paquet transmis est celui qui est versionné ici.
 
 **Fichiers sources intégrés sans modification :**
 
@@ -73,10 +89,15 @@ avec l'oracle non caché, portée de la suite de qualification.
 ## STAGE_2_C_PAYLOAD
 
 ```text
-path          examples/cache-showcase/walkthrough/stage-2-evidence.md
-bytes         9 850
-sha256        e642eaf76e961c7da8cad12d596cf1ed5d757a7beec70741ca3fa5c661c3f78b
+path            examples/cache-showcase/walkthrough/stage-2-evidence.md
+bytes           9 850
+sha256          e642eaf76e961c7da8cad12d596cf1ed5d757a7beec70741ca3fa5c661c3f78b
+transmis par    evt_000008 (author)  ·  evt_000010 (challenger)
 ```
+
+Les deux événements portent la même empreinte que le fichier, et la même l'un
+que l'autre : la fourniture formelle est identique à l'octet pour les deux
+slots.
 
 **Source des mesures — unique :**
 
@@ -122,9 +143,29 @@ recommandation, tout langage de vainqueur, toute conclusion CCR.
 
 ```text
 STAGE_1_FORMAL_C_SUPPLY   =  aucune
-STAGE_2_FORMAL_C_SUPPLY   =  paquet identique à l'octet, prévu pour les deux
-                             sessions, à la même étape
+STAGE_2_FORMAL_C_SUPPLY   =  CONSTATÉE — paquet identique à l'octet, transmis aux
+                             deux sessions à la même étape
+                             evt_000008  ·  evt_000010
 ```
+
+---
+
+## Réponses d'expert
+
+Six réponses, trois étapes, deux slots. Empreintes calculées sur le contenu
+canonique tel qu'il est persisté.
+
+| événement | slot | étape | octets | sha256 |
+|---|---|--:|--:|---|
+| `evt_000003` | author | 1 | 12 139 | `b5b2377cea47786125ae90a2c44a059b4027a842468c2f90bed1d0c69ac28880` |
+| `evt_000006` | challenger | 1 | 4 812 | `0ce908e915091172c665d711369201361559ed3ee55c99d93f9fbc6ebe2a82b2` |
+| `evt_000009` | author | 2 | 16 987 | `a51277e71e19ccef395d8ca825cca0f3b197dda32b097e1d926af74ca1f26d65` |
+| `evt_000011` | challenger | 2 | 5 826 | `07133796c59b84328a2c24b423b404bdea3110a249dc78c5a96cf15a71917e07` |
+| `evt_000014` | challenger | 3 | 9 803 | `561d24373b2375689fe9882bf376f46d9ec0b2e8d7620b8b6d85312ef762114f` |
+| `evt_000018` | author | 3 | 16 990 | `a1696baea98f49e702df2235aee5eb5dd16fe1e6efe01a23589d4a01bafd5c34` |
+
+Le **contenu** de ces réponses n'est pas publié dans ce dépôt. Ces empreintes
+identifient ce qui a été produit ; elles ne le reproduisent pas.
 
 ---
 
@@ -144,9 +185,15 @@ Aucun confinement n'est affirmé ici.
 
 ---
 
-## Ce qui n'est PAS gelé par ce manifeste
+## Ce que ce manifeste ne gèle pas
 
-Fournisseur · arrangement des moteurs · `--max-invocations` · `workspace_cwd` ·
-politique de reprise · intégration VCS · commande de lancement réelle.
+Fournisseur · arrangement des moteurs · plafond d'invocations · répertoire de
+travail · politique de reprise · commande de lancement.
 
-Ces choix restent humains, après inspection des paquets.
+Ces choix sont humains et propres à une exécution. Ils ont été arrêtés au moment
+de lancer `CCR-20260830-001`, et ne font pas partie du matériau gelé de ce
+répertoire : un autre opérateur, avec les mêmes paquets, en ferait d'autres.
+
+Les valeurs d'environnement local employées lors de cette exécution — chemins de
+la machine, identifiants de session natifs — ne sont pas publiées : elles
+n'enseignent rien de CCR.
