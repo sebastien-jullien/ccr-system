@@ -1,6 +1,6 @@
 {
   "name": "ccr-system",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "CCR — Contradictory Cross-Review. Orchestrateur neutre de contre-expertise entre experts IA en sessions natives persistantes.",
   "license": "MPL-2.0",
