@@ -40,6 +40,7 @@
 
 import type { ControversyEntry } from '../core/controversy.ts';
 import type { EvidenceEntry } from '../core/evidence.ts';
+import { isValidZeroOutcome, terminalOutcomeOf } from '../core/invocation-outcome.ts';
 import type { InvocationOutcomeRecord } from '../core/invocation-outcome.ts';
 import type { ReconciliationEntry } from '../core/reconciliation.ts';
 import type { NativeCcrEvent } from '../core/run-native.ts';
@@ -49,13 +50,22 @@ import type { InvocationDispatchRecord } from '../core/usage-governance.ts';
  * Ce que l'état durable établit d'une invocation.
  *
  * ```text
+ * VALID_ZERO_KNOWN   un fait VALID_ZERO durable existe
  * NEGATIVE_KNOWN     un fait négatif durable existe
  * SUCCESS_EVIDENCE   une preuve de succès durable existe, et elle seule
  * UNKNOWN            aucune preuve durable suffisante, dans aucun sens
- * INCONSISTENT       les deux existent — état durable contradictoire
+ * INCONSISTENT       un fait terminal ET une preuve de succès — contradictoire
  * ```
+ *
+ * `VALID_ZERO_KNOWN` nomme **une** issue objectless précise, et rien de plus
+ * large. Ce n'est pas un `SUCCESS_KNOWN` générique, et il n'en existe aucun :
+ * un succès qui produit son objet de domaine reste attesté par cet objet.
+ *
+ * La version persistée du fait n'entre pas dans cette lecture — un fait négatif
+ * historique et un fait négatif courant disent exactement la même chose.
  */
 export type InvocationOutcomeState =
+  | 'VALID_ZERO_KNOWN'
   | 'NEGATIVE_KNOWN'
   | 'SUCCESS_EVIDENCE'
   | 'UNKNOWN'
@@ -64,8 +74,8 @@ export type InvocationOutcomeState =
 export interface InvocationOutcomeView {
   readonly invocation_id: string;
   readonly state: InvocationOutcomeState;
-  /** Renseigné dès qu'un fait négatif existe — y compris en `INCONSISTENT`. */
-  readonly negative?: InvocationOutcomeRecord;
+  /** Renseigné dès qu'un fait terminal existe — y compris en `INCONSISTENT`. */
+  readonly terminal?: InvocationOutcomeRecord;
   /** Références des preuves de succès durables corrélées à cette invocation. */
   readonly success_evidence: readonly string[];
 }
@@ -73,7 +83,7 @@ export interface InvocationOutcomeView {
 /** Une contradiction observée, rendue au diagnostic et jamais tranchée. */
 export interface InvocationOutcomeInconsistency {
   readonly invocation_id: string;
-  readonly negative: InvocationOutcomeRecord;
+  readonly terminal: InvocationOutcomeRecord;
   readonly success_evidence: readonly string[];
 }
 
@@ -155,35 +165,40 @@ function successEvidenceByInvocation(sources: InvocationOutcomeSources): Map<str
 export function projectInvocationOutcomes(
   sources: InvocationOutcomeSources,
 ): InvocationOutcomeReadModel {
-  const negatives = new Map(sources.outcomes.map((outcome) => [outcome.invocation_id, outcome]));
+  // Une seule table de faits terminaux, toutes versions et toutes polarités
+  // confondues : l'exclusivité terminale garantit qu'une invocation n'en porte
+  // qu'un, et le store la fait respecter sans jamais consulter la polarité.
+  const terminals = new Map(sources.outcomes.map((outcome) => [outcome.invocation_id, outcome]));
   const successes = successEvidenceByInvocation(sources);
 
   const inconsistent: InvocationOutcomeInconsistency[] = [];
 
   const by_invocation = sources.invocations.map((dispatch): InvocationOutcomeView => {
-    const negative = negatives.get(dispatch.invocation_id);
+    const terminal = terminals.get(dispatch.invocation_id);
     const evidence = successes.get(dispatch.invocation_id) ?? [];
 
-    if (negative !== undefined && evidence.length > 0) {
+    if (terminal !== undefined && evidence.length > 0) {
       const contradiction = {
         invocation_id: dispatch.invocation_id,
-        negative,
+        terminal,
         success_evidence: evidence,
       };
       inconsistent.push(contradiction);
       return {
         invocation_id: dispatch.invocation_id,
         state: 'INCONSISTENT',
-        negative,
+        terminal,
         success_evidence: evidence,
       };
     }
 
-    if (negative !== undefined) {
+    if (terminal !== undefined) {
       return {
         invocation_id: dispatch.invocation_id,
-        state: 'NEGATIVE_KNOWN',
-        negative,
+        // Le nom de stockage historique n'entre pas ici : la lecture porte sur
+        // ce que le fait signifie, pas sur la version qui l'a persisté.
+        state: isValidZeroOutcome(terminalOutcomeOf(terminal)) ? 'VALID_ZERO_KNOWN' : 'NEGATIVE_KNOWN',
+        terminal,
         success_evidence: [],
       };
     }

@@ -529,9 +529,21 @@ test('10 · T13/T12 — aucune preuve REAL fabriquée', async () => {
     for (const name of files) {
       assert.equal(/valid|accept|gate|s10/i.test(name), false, `aucun marqueur : ${name}`);
     }
+    // `invocation-outcomes.json` porte l'issue terminale de l'invocation — ici
+    // `VALID_ZERO`, que la durabilité des issues objectless rend persistante.
+    // Ce n'est pas un marqueur d'acceptation : la boucle ci-dessus le vérifie,
+    // et son contenu ne dit rien d'une validation de la voie REAL.
     assert.deepEqual(
       files.filter((name) => name.endsWith('.json') || name.endsWith('.jsonl')).sort(),
-      ['controversies.jsonl', 'events.jsonl', 'invocations.jsonl', 'manifest.json', 'state.json', 'usage.jsonl'],
+      [
+        'controversies.jsonl',
+        'events.jsonl',
+        'invocation-outcomes.json',
+        'invocations.jsonl',
+        'manifest.json',
+        'state.json',
+        'usage.jsonl',
+      ],
     );
 
     // Et le drapeau n'est pas mutable : c'est une constante de module.

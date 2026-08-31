@@ -64,6 +64,11 @@ import type { AgentAdapter, AgentTurnResult } from '../../src/adapters/agent-ada
 import { runPaths } from '../../src/store/layout.ts';
 import type { RunPaths } from '../../src/store/layout.ts';
 import { openInvocationLedger } from '../../src/store/invocation-ledger.ts';
+import { readInvocationOutcomes } from '../../src/store/invocation-outcome-store.ts';
+import {
+  INVOCATION_OUTCOME_SCHEMA_VERSION,
+  terminalOutcomeOf,
+} from '../../src/core/invocation-outcome.ts';
 import { appendControversyEntry } from '../../src/store/controversy-store.ts';
 import {
   appendReconciliationEntries,
@@ -562,6 +567,15 @@ test('S13 — un ensemble vide est une issue distincte, sans proposition', async
     // Ne signifie ni « rien à réconcilier », ni accord : aucune de ces valeurs
     // n'existe dans l'issue.
     assert.deepEqual(Object.keys(outcome).sort(), ['invocation_id', 'kind']);
+
+    // J — issue durable, version courante, aucune proposition inventée.
+    const document = await readInvocationOutcomes(h.paths);
+    assert.equal(document.outcomes.length, 1);
+    assert.equal(document.outcomes[0]?.invocation_id, outcome.invocation_id);
+    assert.equal(document.outcomes[0]?.schema_version, INVOCATION_OUTCOME_SCHEMA_VERSION);
+    const fact = document.outcomes[0];
+    assert.ok(fact !== undefined);
+    assert.deepEqual(terminalOutcomeOf(fact), { kind: 'VALID_ZERO' });
   } finally {
     await h.dispose();
   }

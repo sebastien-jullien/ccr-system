@@ -60,7 +60,7 @@ import { projectControversyReadModel } from './controversy-read-model.ts';
 import { runtimeSettingsOf } from './native-start-service.ts';
 import type { RunRuntimeSettings } from './run-service.ts';
 import { withNativeMutation } from './native-mutation-boundary.ts';
-import { commitNegativeOutcome } from './invocation-outcome-writer.ts';
+import { commitInvocationOutcome } from './invocation-outcome-writer.ts';
 
 // ==========================================================================
 // SECTION 1/3 — S7-A · Parseur strict de sortie modèle
@@ -1238,7 +1238,7 @@ export async function adduceMaterialByModel(
     // Issue commitée AVANT d'être rendue. `UNEXPECTED` demeure la valeur
     // publique du résultat, mais n'est jamais persistée : un code inconnu
     // s'omet plutôt que de se déguiser en cause.
-    await commitNegativeOutcome(
+    await commitInvocationOutcome(
       deps,
       request.runId,
       'v4-adduce-model-outcome',
@@ -1275,7 +1275,7 @@ export async function adduceMaterialByModel(
     // Une sortie inexploitable a parfaitement pu consommer une invocation.
     // Le vocabulaire de motif est celui de cette opération, conservé tel
     // quel : il n'est ni traduit, ni fusionné avec ceux des autres familles.
-    await commitNegativeOutcome(deps, request.runId, 'v4-adduce-model-outcome', plan.invocationId, {
+    await commitInvocationOutcome(deps, request.runId, 'v4-adduce-model-outcome', plan.invocationId, {
       kind: 'V4_INVALID_OUTPUT',
       reason: parsed.reason,
       at: parsed.at,
@@ -1291,6 +1291,17 @@ export async function adduceMaterialByModel(
     // Succès opérationnel du chemin modèle. Ne signifie ni « aucune preuve »,
     // ni « aucune relation », ni accord, ni absence de contradiction, ni
     // absence de matière pertinente.
+    //
+    // Aucune adduction n'est écrite : sans fait durable, cette issue serait
+    // après redémarrage indiscernable d'une tentative interrompue. Elle est
+    // commitée AVANT d'être rendue, sous une acquisition courte distincte.
+    await commitInvocationOutcome(
+      deps,
+      request.runId,
+      'v4-adduce-model-outcome',
+      plan.invocationId,
+      { kind: 'VALID_ZERO' },
+    );
     return { kind: 'VALID_ZERO', invocation_id: plan.invocationId };
   }
 
@@ -1305,7 +1316,7 @@ export async function adduceMaterialByModel(
   if (persisted.kind === 'REFUSED') {
     // Le contrôle V4 conserve son vocabulaire propre : il n'est pas ramené sur
     // celui de V5, dont les quatre valeurs décrivent d'autres vérifications.
-    await commitNegativeOutcome(deps, request.runId, 'v4-adduce-model-outcome', plan.invocationId, {
+    await commitInvocationOutcome(deps, request.runId, 'v4-adduce-model-outcome', plan.invocationId, {
       kind: 'V4_REVALIDATION_REFUSED',
       check: persisted.refusal.check,
       detail: persisted.refusal.detail,

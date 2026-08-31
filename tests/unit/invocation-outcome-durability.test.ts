@@ -14,6 +14,8 @@
  * E  reprise : aucun verrou imbriqué, issue écrite sous le verrou détenu
  * F  SEND : le transcript natif demeure, et l'issue lui est corrélée
  * L  fait négatif + preuve de succès  →  INCONSISTENT, sans vainqueur
+ * M  modèle de lecture : VALID_ZERO_KNOWN, NEGATIVE_KNOWN toutes versions
+ * N  engagement + réponse sans fait terminal  →  UNKNOWN, jamais VALID_ZERO
  * M  run ancien sans document d'issues : lisible, aucun backfill
  * ```
  *
@@ -28,7 +30,14 @@ import type { ProviderKind } from '../../src/core/expert.ts';
 import { NATIVE_RUNTIME_CONFIG_SCHEMA_VERSION } from '../../src/core/run-native.ts';
 import type { NativeCcrEvent, NativeRunRuntimeConfig } from '../../src/core/run-native.ts';
 import type { InvocationDispatchRecord } from '../../src/core/usage-governance.ts';
-import type { InvocationOutcomeRecord } from '../../src/core/invocation-outcome.ts';
+import {
+  INVOCATION_OUTCOME_SCHEMA_VERSION,
+  terminalOutcomeOf,
+} from '../../src/core/invocation-outcome.ts';
+import type {
+  InvocationOutcomeRecord,
+  TerminalOutcome,
+} from '../../src/core/invocation-outcome.ts';
 import { startNativeRun } from '../../src/services/native-start-service.ts';
 import type { NativeStartHooks } from '../../src/services/native-start-service.ts';
 import { continueNativeInitialization } from '../../src/services/native-recovery-service.ts';
@@ -45,6 +54,12 @@ import { acquireRunLock } from '../../src/lock/run-lock.ts';
 import { createFakeAdapter } from '../helpers/fake-adapter.ts';
 import type { FakeAdapter } from '../helpers/fake-adapter.ts';
 import { makeTempDir, removeTempDir } from '../helpers/temp-dir.ts';
+
+/** L'issue portée par un enregistrement, quelle que soit sa version persistée. */
+function factOf(record?: InvocationOutcomeRecord): TerminalOutcome | undefined {
+  return record === undefined ? undefined : terminalOutcomeOf(record);
+}
+
 
 const AT = '2026-08-31T00:00:00.000Z';
 const MISSION = 'Mission initiale : évaluer la refonte.';
@@ -252,7 +267,7 @@ test("D — échec fournisseur natif : l'issue est durable avant que l'erreur ne
     const document = await readInvocationOutcomes(paths);
     assert.equal(document.outcomes.length, 1);
     assert.equal(document.outcomes[0]?.invocation_id, invocationId);
-    assert.deepEqual(document.outcomes[0]?.terminal_negative_outcome, {
+    assert.deepEqual(factOf(document.outcomes[0]), {
       kind: 'NATIVE_PROCESS_FAILED',
       error_code: 'AGENT_TIMEOUT',
     });
@@ -276,7 +291,7 @@ test("D — une cause non typée ne fabrique aucun code natif", async () => {
     const paths = runPaths(dir, result.runId);
     const document = await readInvocationOutcomes(paths);
     assert.equal(document.outcomes.length, 1);
-    assert.deepEqual(document.outcomes[0]?.terminal_negative_outcome, { kind: 'NATIVE_PROCESS_FAILED' });
+    assert.deepEqual(factOf(document.outcomes[0]), { kind: 'NATIVE_PROCESS_FAILED' });
   } finally {
     await removeTempDir(dir);
   }
@@ -313,7 +328,7 @@ test('N — SESSION_ID_COLLISION : slot, moteur et session sont conservés', asy
 
     // Le fait durable, champ pour champ. `deepEqual` vaut ici garde de fermeture :
     // un sac générique qui se serait glissé dans la charge utile le ferait échouer.
-    assert.deepEqual(document.outcomes[0]?.terminal_negative_outcome, {
+    assert.deepEqual(factOf(document.outcomes[0]), {
       kind: 'NATIVE_PROCESS_FAILED',
       error_code: 'SESSION_ID_COLLISION',
       native_detail: {
@@ -359,7 +374,7 @@ test('N — AGENT_SESSION_MISMATCH : les deux sessions sont conservées', async 
     const paths = runPaths(dir, started.runId);
     const document = await readInvocationOutcomes(paths);
     assert.equal(document.outcomes.length, 1);
-    assert.deepEqual(document.outcomes[0]?.terminal_negative_outcome, {
+    assert.deepEqual(factOf(document.outcomes[0]), {
       kind: 'NATIVE_PROCESS_FAILED',
       error_code: 'AGENT_SESSION_MISMATCH',
       native_detail: {
@@ -391,7 +406,7 @@ test("N — un échec d'adaptateur ne reçoit aucun détail : son sac reste au t
     const document = await readInvocationOutcomes(paths);
     // Le code, et rien d'autre : CCR n'a pas écrit cette structure et ne la
     // connaît pas. Aucun `native_detail`, aucun sac recopié.
-    assert.deepEqual(document.outcomes[0]?.terminal_negative_outcome, {
+    assert.deepEqual(factOf(document.outcomes[0]), {
       kind: 'NATIVE_PROCESS_FAILED',
       error_code: 'AGENT_EXIT_NONZERO',
     });
@@ -477,7 +492,7 @@ test("E — une reprise qui échoue écrit son issue sous le verrou déjà déte
       document.outcomes.map((record) => record.invocation_id),
       invocations.map((entry: InvocationDispatchRecord) => entry.invocation_id),
     );
-    assert.deepEqual(document.outcomes[1]?.terminal_negative_outcome, {
+    assert.deepEqual(factOf(document.outcomes[1]), {
       kind: 'NATIVE_PROCESS_FAILED',
       error_code: 'AGENT_TIMEOUT',
     });
@@ -525,7 +540,7 @@ test("F — échec d'un SEND : le `process_failed` demeure, et l'issue lui est c
     const document = await readInvocationOutcomes(paths);
     assert.equal(document.outcomes.length, 1);
     assert.equal(document.outcomes[0]?.invocation_id, sendDispatch?.invocation_id);
-    assert.deepEqual(document.outcomes[0]?.terminal_negative_outcome, {
+    assert.deepEqual(factOf(document.outcomes[0]), {
       kind: 'NATIVE_PROCESS_FAILED',
       error_code: 'AGENT_EXIT_NONZERO',
     });
@@ -627,7 +642,7 @@ test('L — fait négatif ET preuve de succès : INCONSISTENT, sans vainqueur', 
   const view = model.by_invocation[0];
   assert.equal(view?.state, 'INCONSISTENT');
   // Les deux faits restent lisibles : aucun n'est écarté au profit de l'autre.
-  assert.notEqual(view?.negative, undefined);
+  assert.notEqual(view?.terminal, undefined);
   assert.deepEqual(view?.success_evidence, ['evt_000003']);
   assert.equal(model.anomalies.inconsistent.length, 1);
 });
@@ -703,10 +718,100 @@ test('M — un run sans document d’issues reste lisible, et rien n’est recon
     assert.equal(model.by_invocation.length, 2);
     for (const view of model.by_invocation) {
       assert.equal(view.state, 'SUCCESS_EVIDENCE');
-      assert.equal(view.negative, undefined);
+      assert.equal(view.terminal, undefined);
     }
     assert.equal(model.anomalies.inconsistent.length, 0);
   } finally {
     await removeTempDir(dir);
   }
+});
+
+// --------------------------------------------------------------------------
+// M — le modèle de lecture, une fois VALID_ZERO durable
+// --------------------------------------------------------------------------
+
+/** Un fait courant, quelle que soit son issue. */
+function currentOutcome(invocationId: string, terminal: TerminalOutcome): InvocationOutcomeRecord {
+  return {
+    schema_version: INVOCATION_OUTCOME_SCHEMA_VERSION,
+    invocation_id: invocationId,
+    recorded_at: AT,
+    terminal_outcome: terminal,
+  };
+}
+
+test('M — un fait négatif dit la même chose sous les deux versions', () => {
+  for (const record of [
+    outcome('inv_000001'),
+    currentOutcome('inv_000001', { kind: 'NATIVE_PROCESS_FAILED', error_code: 'AGENT_TIMEOUT' }),
+  ]) {
+    const model = projectInvocationOutcomes({
+      ...NO_SOURCES,
+      invocations: [dispatch('inv_000001')],
+      outcomes: [record],
+    });
+    assert.equal(model.by_invocation[0]?.state, 'NEGATIVE_KNOWN');
+    assert.equal(model.anomalies.inconsistent.length, 0);
+  }
+});
+
+test('M — un fait VALID_ZERO durable se lit VALID_ZERO_KNOWN', () => {
+  const model = projectInvocationOutcomes({
+    ...NO_SOURCES,
+    invocations: [dispatch('inv_000001')],
+    outcomes: [currentOutcome('inv_000001', { kind: 'VALID_ZERO' })],
+  });
+
+  const view = model.by_invocation[0];
+  assert.equal(view?.state, 'VALID_ZERO_KNOWN');
+  assert.deepEqual(view?.success_evidence, []);
+  assert.equal(model.anomalies.inconsistent.length, 0);
+});
+
+test('M — VALID_ZERO durable ET preuve de succès : INCONSISTENT, sans vainqueur', () => {
+  // Un VALID_ZERO ne produit aucun objet de domaine : trouver les deux décrit
+  // un monde impossible, que CCR rend au diagnostic sans le trancher.
+  const model = projectInvocationOutcomes({
+    ...NO_SOURCES,
+    invocations: [dispatch('inv_000001', 'evt_000002')],
+    outcomes: [currentOutcome('inv_000001', { kind: 'VALID_ZERO' })],
+    events: [
+      {
+        schema_version: 1,
+        event_id: 'evt_000003',
+        run_id: 'CCR-20260831-001',
+        round: 0,
+        actor: 'expert',
+        type: 'assistant_response',
+        expert_slot_id: 'author',
+        session_id: 'claude-1',
+        content: 'réponse',
+        based_on: ['evt_000002'],
+        timestamp: AT,
+      } as unknown as NativeCcrEvent,
+    ],
+  });
+
+  assert.equal(model.by_invocation[0]?.state, 'INCONSISTENT');
+  assert.equal(model.anomalies.inconsistent.length, 1);
+  // Aucune priorité : le fait terminal ET la preuve restent tous deux lisibles.
+  assert.notEqual(model.by_invocation[0]?.terminal, undefined);
+  assert.deepEqual(model.by_invocation[0]?.success_evidence, ['evt_000003']);
+});
+
+test('N — engagement + réponse, sans fait terminal : UNKNOWN, jamais VALID_ZERO', () => {
+  // C'est exactement la signature d'une invocation historique, et celle d'une
+  // tentative interrompue. Ajouter un fait aux issues neuves n'autorise jamais
+  // à interpréter son absence sur les anciennes.
+  const model = projectInvocationOutcomes({
+    ...NO_SOURCES,
+    invocations: [dispatch('inv_000001', 'evt_000002')],
+    outcomes: [],
+  });
+
+  const view = model.by_invocation[0];
+  assert.equal(view?.state, 'UNKNOWN');
+  assert.notEqual(view?.state, 'VALID_ZERO_KNOWN');
+  assert.equal(view?.terminal, undefined);
+  assert.deepEqual(view?.success_evidence, []);
 });

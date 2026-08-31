@@ -1,5 +1,5 @@
 /**
- * Durabilité de l'issue négative — chemin assisté V5.
+ * Durabilité de l'issue terminale — chemin assisté V5.
  *
  * Ce qui est éprouvé :
  *
@@ -8,7 +8,8 @@
  * H  REVALIDATION_REFUSED fait durable avant exposition
  * I  PROVIDER_FAILED      code natif conservé quand connu,
  *                         aucune cause inventée sinon
- *    VALID_ZERO           n'est pas une issue négative : aucun fait écrit
+ * J  VALID_ZERO           fait durable sans objet de domaine, avant exposition
+ * K  commit impossible    l'issue n'est pas rendue, la panne remonte, zéro rejeu
  * ```
  *
  * Le harnais est celui de la tranche S13 : vrai filesystem, vrai verrou, vrai
@@ -22,7 +23,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { CcrError } from '../../src/core/errors.ts';
+import { CcrError, isCcrError } from '../../src/core/errors.ts';
 import {
   CONTROVERSY_SCHEMA_VERSION,
   formatControversyEntryId,
@@ -36,9 +37,24 @@ import {
   proposeReconciliationByModel,
 } from '../../src/services/reconciliation-proposer.ts';
 import type { ReconciliationProposerDeps } from '../../src/services/reconciliation-proposer.ts';
+import {
+  INVOCATION_OUTCOME_SCHEMA_VERSION,
+  terminalOutcomeOf,
+} from '../../src/core/invocation-outcome.ts';
+import type {
+  InvocationOutcomeRecord,
+  TerminalOutcome,
+} from '../../src/core/invocation-outcome.ts';
 import { readInvocationOutcomes } from '../../src/store/invocation-outcome-store.ts';
+import { openInvocationLedger } from '../../src/store/invocation-ledger.ts';
 import { runPaths } from '../../src/store/layout.ts';
 import type { RunPaths } from '../../src/store/layout.ts';
+
+/** L'issue portée par un enregistrement, quelle que soit sa version persistée. */
+function factOf(record?: InvocationOutcomeRecord): TerminalOutcome | undefined {
+  return record === undefined ? undefined : terminalOutcomeOf(record);
+}
+
 
 const RUN_ID = 'CCR-20260820-914';
 const CTV = formatControversyId(1);
@@ -99,6 +115,7 @@ function fakeAdapter(kind: 'claude' | 'codex', script: AdapterScript): FakeAdapt
 
 interface Harness {
   readonly paths: RunPaths;
+  readonly adapters: { claude: FakeAdapter; codex: FakeAdapter };
   readonly deps: ReconciliationProposerDeps;
   dispose(): Promise<void>;
 }
@@ -169,6 +186,7 @@ async function harness(script: AdapterScript = {}): Promise<Harness> {
 
   return {
     paths,
+    adapters,
     deps: { runsDir, now, createAdapters: () => adapters },
     dispose: () => rm(runsDir, { recursive: true, force: true }),
   };
@@ -202,7 +220,7 @@ test('G — INVALID_OUTPUT : fait durable, motif natif V5 conservé', async () =
     assert.equal(document.outcomes.length, 1);
     assert.equal(document.outcomes[0]?.invocation_id, result.invocation_id);
 
-    const fact = document.outcomes[0]?.terminal_negative_outcome;
+    const fact = factOf(document.outcomes[0]);
     // Le discriminant nomme l'opération d'origine ; le motif reste celui de V5.
     assert.equal(fact?.kind, 'V5_INVALID_OUTPUT');
     assert.equal((fact as { reason: string }).reason, 'OUTPUT_UNPARSABLE');
@@ -212,7 +230,15 @@ test('G — INVALID_OUTPUT : fait durable, motif natif V5 conservé', async () =
   }
 });
 
-test("G — VALID_ZERO n'est pas une issue négative : aucun fait n'est écrit", async () => {
+/**
+ * `VALID_ZERO` est une issue terminale sans objet de domaine.
+ *
+ * Cette assertion s'est inversée : jusqu'en v0.3.0 elle exigeait qu'aucun fait
+ * ne soit écrit, ce qui décrivait fidèlement le contrat d'alors. La durabilité
+ * des issues objectless a changé ce contrat — et l'inversion est délibérée,
+ * pas la correction d'un test devenu gênant.
+ */
+test('J — VALID_ZERO : fait durable, sans objet de domaine, avant exposition', async () => {
   const h = await harness({
     content: JSON.stringify({
       version: RECONCILIATION_PROPOSAL_OUTPUT_VERSION,
@@ -223,8 +249,54 @@ test("G — VALID_ZERO n'est pas une issue négative : aucun fait n'est écrit",
   try {
     const result = await propose(h);
     assert.equal(result.kind, 'VALID_ZERO');
-    assert.equal(existsSync(h.paths.invocationOutcomes), false);
-    assert.equal((await outcomes(h)).outcomes.length, 0);
+
+    const document = await outcomes(h);
+    assert.equal(document.outcomes.length, 1);
+    assert.equal(document.outcomes[0]?.invocation_id, result.invocation_id);
+    assert.equal(document.outcomes[0]?.schema_version, INVOCATION_OUTCOME_SCHEMA_VERSION);
+    // Aucune charge utile : ni motif, ni périmètre soumis, ni `success`.
+    assert.deepEqual(factOf(document.outcomes[0]), { kind: 'VALID_ZERO' });
+
+    // Et aucune proposition n'a été inventée pour porter l'issue.
+    assert.equal(existsSync(h.paths.reconciliations), false);
+  } finally {
+    await h.dispose();
+  }
+});
+
+/**
+ * `K` — la persistance échoue : l'issue ne doit pas paraître garantie.
+ *
+ * Un répertoire occupe la place du document. La séquence de commit échoue donc
+ * dès sa relecture, et c'est bien une panne de persistance — le contrat porte
+ * sur le commit entier, pas sur l'une de ses étapes. Le code typé de l'échec
+ * d'écriture est éprouvé séparément, au niveau du store.
+ *
+ * Ce que ce test garantit est le point dur : le résultat exposé n'est **pas**
+ * `VALID_ZERO`, et rien n'est rejoué.
+ */
+test("K — commit impossible : VALID_ZERO n'est pas rendu, la panne remonte", async () => {
+  const h = await harness({
+    content: JSON.stringify({
+      version: RECONCILIATION_PROPOSAL_OUTPUT_VERSION,
+      target_controversy_id: CTV,
+      proposals: [],
+    }),
+  });
+  try {
+    await mkdir(h.paths.invocationOutcomes, { recursive: true });
+
+    let exposed: unknown;
+    await assert.rejects(async () => {
+      exposed = await propose(h);
+    });
+    // Aucune issue n'a été rendue : ni VALID_ZERO, ni une autre fabriquée.
+    assert.equal(exposed, undefined);
+
+    // Un seul appel fournisseur : aucun rejeu, aucune seconde tentative.
+    assert.equal(h.adapters.claude.calls.length + h.adapters.codex.calls.length, 1);
+    // Le ledger reste inchangé : l'invocation a bien été consommée.
+    assert.equal((await openInvocationLedger(h.paths, RUN_ID)).count(), 1);
   } finally {
     await h.dispose();
   }
@@ -250,7 +322,7 @@ test('H — REVALIDATION_REFUSED : fait durable, contrôle natif conservé', asy
 
     const document = await outcomes(h);
     assert.equal(document.outcomes.length, 1);
-    const fact = document.outcomes[0]?.terminal_negative_outcome;
+    const fact = factOf(document.outcomes[0]);
     assert.equal(fact?.kind, 'V5_REVALIDATION_REFUSED');
     // Le contrôle appartient au vocabulaire fermé de V5.
     assert.ok(
@@ -272,7 +344,7 @@ test('I — PROVIDER_FAILED : le code natif connu est conservé', async () => {
     assert.equal(result.kind, 'PROVIDER_FAILED');
 
     const document = await outcomes(h);
-    assert.deepEqual(document.outcomes[0]?.terminal_negative_outcome, {
+    assert.deepEqual(factOf(document.outcomes[0]), {
       kind: 'V5_PROVIDER_FAILED',
       error_code: 'AGENT_TIMEOUT',
     });
@@ -291,7 +363,33 @@ test("I — PROVIDER_FAILED : une cause inconnue n'est jamais fabriquée", async
 
     // Mais rien de tel n'est persisté : un aveu d'ignorance n'est pas une cause.
     const document = await outcomes(h);
-    assert.deepEqual(document.outcomes[0]?.terminal_negative_outcome, { kind: 'V5_PROVIDER_FAILED' });
+    assert.deepEqual(factOf(document.outcomes[0]), { kind: 'V5_PROVIDER_FAILED' });
+  } finally {
+    await h.dispose();
+  }
+});
+
+// --------------------------------------------------------------------------
+// L — le succès qui produit son objet n'entre pas dans cette autorité
+// --------------------------------------------------------------------------
+
+test('L — RECORDED : aucun enregistrement d’issue redondant', async () => {
+  const h = await harness({
+    content: JSON.stringify({
+      version: RECONCILIATION_PROPOSAL_OUTPUT_VERSION,
+      target_controversy_id: CTV,
+      proposals: [{ scope: [E1], options: [{ option_id: 'oa', content: 'option a' }] }],
+    }),
+  });
+  try {
+    const result = await propose(h);
+    assert.equal(result.kind, 'RECORDED');
+
+    // La proposition persistée EST l'attestation du succès, et elle porte déjà
+    // l'identifiant d'invocation. Un fait d'issue en plus créerait une seconde
+    // autorité sur un fait déjà établi : il n'en existe aucun.
+    assert.equal(existsSync(h.paths.invocationOutcomes), false);
+    assert.equal((await outcomes(h)).outcomes.length, 0);
   } finally {
     await h.dispose();
   }

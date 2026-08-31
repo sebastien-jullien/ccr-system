@@ -78,7 +78,7 @@ import { recordDetectedRelations } from './controversy-service.ts';
 import { runtimeSettingsOf } from './native-start-service.ts';
 import type { RunRuntimeSettings } from './run-service.ts';
 import { withNativeMutation } from './native-mutation-boundary.ts';
-import { commitNegativeOutcome } from './invocation-outcome-writer.ts';
+import { commitInvocationOutcome } from './invocation-outcome-writer.ts';
 
 // --------------------------------------------------------------------------
 // Version et borne
@@ -591,7 +591,7 @@ export async function detectControversyRelations(
     // Issue commitée AVANT d'être rendue. `UNEXPECTED` demeure la valeur
     // publique du résultat, mais n'est jamais persistée : un code inconnu
     // s'omet plutôt que de se déguiser en cause.
-    await commitNegativeOutcome(
+    await commitInvocationOutcome(
       deps,
       request.runId,
       'v3-detect-outcome',
@@ -628,7 +628,7 @@ export async function detectControversyRelations(
   if (parsed.outcome === 'INVALID') {
     // Le vocabulaire de motif est celui de cette opération, conservé tel
     // quel : il n'est ni traduit, ni fusionné avec ceux des autres familles.
-    await commitNegativeOutcome(deps, request.runId, 'v3-detect-outcome', plan.invocationId, {
+    await commitInvocationOutcome(deps, request.runId, 'v3-detect-outcome', plan.invocationId, {
       kind: 'V3_INVALID_OUTPUT',
       reason: parsed.reason,
       at: parsed.at,
@@ -643,6 +643,15 @@ export async function detectControversyRelations(
   if (parsed.proposals.length === 0) {
     // Succès de détection sans proposition. Ne signifie ni accord, ni absence
     // de controverse, ni résolution.
+    //
+    // Aucun objet de domaine ne naît ici. Sans fait durable, cette issue serait
+    // après redémarrage indiscernable d'une tentative interrompue entre l'usage
+    // et l'analyse. Elle est donc commitée AVANT d'être rendue — une
+    // acquisition courte de plus, distincte de celle de l'usage, le verrou
+    // n'étant pas réentrant.
+    await commitInvocationOutcome(deps, request.runId, 'v3-detect-outcome', plan.invocationId, {
+      kind: 'VALID_ZERO',
+    });
     return { kind: 'VALID_ZERO', invocation_id: plan.invocationId };
   }
 

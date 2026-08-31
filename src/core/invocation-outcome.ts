@@ -1,5 +1,5 @@
 /**
- * Domaine — issue négative terminale d'une invocation engagée.
+ * Domaine — issue terminale d'une invocation engagée.
  *
  * Formes et validations **pures**. Aucune IO, aucun accès disque, aucun
  * service, aucun fournisseur.
@@ -7,9 +7,26 @@
  * ## L'autorité de cette source, et elle seule
  *
  * ```text
- * ce que CCR a établi DÉTERMINISTEMENT comme issue terminale NÉGATIVE
- * d'une invocation DÉJÀ ENGAGÉE
+ * ce que CCR a établi DÉTERMINISTEMENT comme issue terminale d'une invocation
+ * DÉJÀ ENGAGÉE, lorsque cette issue n'est PAS attestée par ailleurs par un
+ * fait de domaine durable qui la porte lui-même
  * ```
+ *
+ * Le critère d'appartenance est cette absence d'auto-attestation, **jamais** la
+ * polarité du résultat. Deux familles y entrent aujourd'hui :
+ *
+ * ```text
+ * issues négatives terminales   aucun objet positif ne peut les établir
+ * VALID_ZERO                    aucun objet positif ne les établit
+ * ```
+ *
+ * Et rien d'autre n'y entre. `V3 PERSISTED`, `V4 PERSISTED`, `V5 RECORDED` et
+ * les succès natifs sont attestés par leurs propres faits durables — entrées de
+ * domaine portant `derivation.invocation_id`, transcript natif corrélé par
+ * l'événement de prompt. Leur ajouter un enregistrement ici créerait une
+ * seconde autorité sur un fait déjà établi ailleurs : **aucune autorité
+ * générique de succès n'existe**, et la frontière ci-dessus l'exclut par sa
+ * définition même, non par une règle ajoutée.
  *
  * Distincte des trois autorités voisines, qu'elle ne remplace ni ne duplique :
  *
@@ -22,12 +39,36 @@
  * Les deux derniers axes sont **orthogonaux** au présent : une invocation peut
  * porter `RESPONSE_RECEIVED` côté usage — le fournisseur a répondu, le
  * processus est sorti en 0 — et une issue de domaine négative ici. Les
- * confondre effacerait cette orthogonalité.
+ * confondre effacerait cette orthogonalité. `RESPONSE_RECEIVED` est écrit à
+ * l'identique pour `VALID_ZERO`, pour un refus d'analyse et pour un succès
+ * objet : il ne prouve donc aucune des trois.
+ *
+ * ## Coexistence de versions d'enregistrement
+ *
+ * ```text
+ * DOCUMENT v1        n'admet que des enregistrements v1
+ * DOCUMENT v2        admet des enregistrements v1 ET v2
+ * ```
+ *
+ * La version du document dit quel **format de conteneur** est employé et quels
+ * modèles d'enregistrement il a le droit de porter ; la version d'un
+ * enregistrement dit la forme sous laquelle **ce fait-là** a été persisté.
+ *
+ * Un enregistrement v1 relu conserve sa version, son champ
+ * `terminal_negative_outcome` et sa charge utile — il n'est **jamais** converti
+ * à la forme courante parce qu'un fait plus récent s'ajoute à côté de lui. Le
+ * conteneur, lui, est réécrit en entier à chaque ajout : c'est le mécanisme de
+ * persistance atomique, et le conteneur ne porte aucun fait.
+ *
+ * ```text
+ * REMPLACEMENT DU DOCUMENT   normal, atomique, sans signification de fait
+ * MIGRATION D'UN FAIT        interdite
+ * ```
  *
  * ## Aucune taxonomie universelle d'échec
  *
- * `terminal_negative_outcome` est une **union discriminée fermée** qui préserve
- * la sémantique native de l'opération d'origine. Les vocabulaires de motif de
+ * L'issue terminale est une **union discriminée fermée** qui préserve la
+ * sémantique native de l'opération d'origine. Les vocabulaires de motif de
  * V3, V4 et V5 diffèrent réellement — 5, 6 et 15 valeurs — et ne sont pas
  * fusionnés parce que certains noms coïncident.
  *
@@ -60,8 +101,37 @@ import { EXPERT_SLOT_IDS, PROVIDER_KINDS } from './expert.ts';
 import type { ExpertSlotId, ProviderKind } from './expert.ts';
 import { parseInvocationSequence } from './usage-governance.ts';
 
-/** Version du document d'issues. Sans rapport avec celle des autres journaux. */
-export const INVOCATION_OUTCOME_SCHEMA_VERSION = 1;
+/**
+ * Version historique — celle de CCR v0.3.0.
+ *
+ * Elle n'est pas dépréciée : elle reste la forme exacte sous laquelle les faits
+ * de cette époque ont été écrits, et sous laquelle ils continuent d'être relus.
+ */
+export const INVOCATION_OUTCOME_SCHEMA_VERSION_V1 = 1;
+
+/** Version courante du document et des enregistrements neufs. */
+export const INVOCATION_OUTCOME_SCHEMA_VERSION = 2;
+
+/**
+ * Versions d'enregistrement admises par une version de document.
+ *
+ * Une liste par version, jamais un repli : un conteneur v1 qui accepterait un
+ * enregistrement courant mentirait sur ce qu'un lecteur v1 peut en faire. La
+ * forme suit celle de `invocationTriggerKindsFor` — une version inconnue ne
+ * reçoit **aucun** vocabulaire.
+ */
+export function invocationOutcomeRecordVersionsFor(
+  documentVersion: number,
+): readonly number[] | undefined {
+  switch (documentVersion) {
+    case INVOCATION_OUTCOME_SCHEMA_VERSION_V1:
+      return [INVOCATION_OUTCOME_SCHEMA_VERSION_V1];
+    case INVOCATION_OUTCOME_SCHEMA_VERSION:
+      return [INVOCATION_OUTCOME_SCHEMA_VERSION_V1, INVOCATION_OUTCOME_SCHEMA_VERSION];
+    default:
+      return undefined;
+  }
+}
 
 // --------------------------------------------------------------------------
 // Vocabulaires natifs — recopiés en tant que valeurs, jamais fusionnés
@@ -269,12 +339,63 @@ export function nativeProcessFailedOutcome(
     : { kind: 'NATIVE_PROCESS_FAILED' };
 }
 
-/** Un fait durable, clé par invocation. */
-export interface InvocationOutcomeRecord {
-  readonly schema_version: number;
+/**
+ * Issue terminale d'une invocation, telle que la version courante la persiste.
+ *
+ * `VALID_ZERO` n'a **aucune charge utile**, et c'est exact plutôt qu'économe :
+ * le fait dit « cette invocation engagée a atteint `VALID_ZERO` », rien de
+ * plus. La famille d'opération n'y figure pas — `trigger_kind` en fait autorité
+ * au ledger, sous la même clé. Le périmètre soumis n'y figure pas non plus :
+ * une décision produit gelée l'exclut du fait.
+ *
+ * Les issues négatives portent, elles, un discriminant par famille — `V3_`,
+ * `V4_`, `V5_` — parce que leurs vocabulaires de motif diffèrent réellement et
+ * ne doivent pas fusionner. `VALID_ZERO` ne porte aucun motif : il n'y a rien à
+ * garder séparé, et un membre unique applique le même principe à un fait sans
+ * charge utile.
+ */
+export type TerminalOutcome = TerminalNegativeOutcome | { readonly kind: 'VALID_ZERO' };
+
+/** Vrai si l'issue est le succès opérationnel sans objet de domaine. */
+export function isValidZeroOutcome(outcome: TerminalOutcome): boolean {
+  return outcome.kind === 'VALID_ZERO';
+}
+
+/**
+ * Enregistrement historique — CCR v0.3.0.
+ *
+ * Conservé tel quel, nom de champ compris. Le renommer pour l'homogénéité du
+ * fichier réécrirait un fait déjà commité.
+ */
+export interface InvocationOutcomeRecordV1 {
+  readonly schema_version: typeof INVOCATION_OUTCOME_SCHEMA_VERSION_V1;
   readonly invocation_id: string;
   readonly recorded_at: string;
   readonly terminal_negative_outcome: TerminalNegativeOutcome;
+}
+
+/** Enregistrement courant — le seul que ce module écrit désormais. */
+export interface InvocationOutcomeRecordV2 {
+  readonly schema_version: typeof INVOCATION_OUTCOME_SCHEMA_VERSION;
+  readonly invocation_id: string;
+  readonly recorded_at: string;
+  readonly terminal_outcome: TerminalOutcome;
+}
+
+/** Un fait durable, clé par invocation, dans l'une des formes supportées. */
+export type InvocationOutcomeRecord = InvocationOutcomeRecordV1 | InvocationOutcomeRecordV2;
+
+/**
+ * L'issue portée par un enregistrement, quelle que soit sa version persistée.
+ *
+ * **Normalisation en mémoire, et rien d'autre.** Le nom de stockage historique
+ * n'est pas le nom du modèle logique courant, et cette projection ne justifie
+ * jamais de réécrire le stockage.
+ */
+export function terminalOutcomeOf(record: InvocationOutcomeRecord): TerminalOutcome {
+  return record.schema_version === INVOCATION_OUTCOME_SCHEMA_VERSION_V1
+    ? record.terminal_negative_outcome
+    : record.terminal_outcome;
 }
 
 /**
@@ -282,14 +403,16 @@ export interface InvocationOutcomeRecord {
  *
  * Une **collection clavetée** : le doublon d'`invocation_id` n'y est pas
  * représentable deux fois, et la vérification d'unicité reste explicite à
- * l'écriture plutôt que déléguée à la forme.
+ * l'écriture plutôt que déléguée à la forme. L'unicité ne connaît **aucune**
+ * version : un fait v1 et un fait courant portant la même invocation sont un
+ * doublon, exactement comme deux faits de même version.
  */
 export interface InvocationOutcomeDocument {
   readonly schema_version: number;
   readonly outcomes: readonly InvocationOutcomeRecord[];
 }
 
-/** Document vide — la forme d'un run sans aucune issue négative. */
+/** Document vide — la forme d'un run sans aucune issue terminale enregistrée. */
 export function emptyInvocationOutcomeDocument(): InvocationOutcomeDocument {
   return { schema_version: INVOCATION_OUTCOME_SCHEMA_VERSION, outcomes: [] };
 }
@@ -436,27 +559,103 @@ export function validateNativeFailureDetail(value: unknown): NativeFailureDetail
   };
 }
 
-/** Valide un enregistrement complet. Fonction pure. */
-export function validateInvocationOutcomeRecord(value: unknown): InvocationOutcomeRecord {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw invalid('un enregistrement doit être un objet.');
+/** Valide l'issue terminale courante — l'union négative, plus `VALID_ZERO`. */
+export function validateTerminalOutcome(value: unknown): TerminalOutcome {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    if (record['kind'] === 'VALID_ZERO') {
+      // Fait sans charge utile : tout champ supplémentaire est refusé plutôt
+      // qu'ignoré. C'est ce refus qui empêche le périmètre soumis, un motif ou
+      // un `success: true` d'y entrer un jour par distraction.
+      requireOnly(record, ['kind'], 'terminal_outcome');
+      return { kind: 'VALID_ZERO' };
+    }
   }
-  const record = value as Record<string, unknown>;
-  requireOnly(record, ['schema_version', 'invocation_id', 'recorded_at', 'terminal_negative_outcome'], 'outcome');
+  return validateTerminalNegativeOutcome(value);
+}
 
-  if (record['schema_version'] !== INVOCATION_OUTCOME_SCHEMA_VERSION) {
-    throw invalid(`schema_version non pris en charge (${String(record['schema_version'])}).`);
-  }
+/**
+ * Identité et horodatage, communs aux deux versions d'enregistrement.
+ *
+ * L'`invocation_id` canonique est la clé d'unicité, et la seule corrélation que
+ * le fait porte.
+ */
+function validateOutcomeIdentity(record: Record<string, unknown>): {
+  invocationId: string;
+  recordedAt: string;
+} {
   const invocationId = requireNonEmptyString(record['invocation_id'], 'invocation_id');
   if (parseInvocationSequence(invocationId) === undefined) {
     throw invalid(`invocation_id non canonique (${invocationId}).`, { invocationId });
   }
+  return { invocationId, recordedAt: requireNonEmptyString(record['recorded_at'], 'recorded_at') };
+}
 
+/**
+ * Valide un enregistrement **selon sa propre version**.
+ *
+ * Deux propriétés font tout le contrat de compatibilité :
+ *
+ * ```text
+ * la version rendue est celle LUE      jamais la version courante estampillée
+ * la liste de champs est PAR VERSION   jamais une liste fusionnée
+ * ```
+ *
+ * Estampiller la version courante convertirait silencieusement chaque fait
+ * historique à la relecture suivante, et la première réécriture atomique du
+ * document le rendrait durable : ce serait une migration à l'écriture, que le
+ * contrat d'immutabilité interdit. Fusionner les listes de champs laisserait un
+ * enregistrement v1 porter le champ courant, et réciproquement — les deux
+ * formes cesseraient d'être fermées.
+ *
+ * `allowedVersions` vient du conteneur : un document v1 n'admet aucun
+ * enregistrement courant, et le refuser ici est le seul endroit où cette règle
+ * peut être vérifiée.
+ */
+export function validateInvocationOutcomeRecord(
+  value: unknown,
+  allowedVersions: readonly number[] = [
+    INVOCATION_OUTCOME_SCHEMA_VERSION_V1,
+    INVOCATION_OUTCOME_SCHEMA_VERSION,
+  ],
+): InvocationOutcomeRecord {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw invalid('un enregistrement doit être un objet.');
+  }
+  const record = value as Record<string, unknown>;
+  const version = record['schema_version'];
+
+  if (typeof version !== 'number' || !allowedVersions.includes(version)) {
+    throw invalid(`schema_version d'enregistrement non pris en charge (${String(version)}).`, {
+      field: 'outcome.schema_version',
+      found: version,
+      allowed: [...allowedVersions],
+    });
+  }
+
+  if (version === INVOCATION_OUTCOME_SCHEMA_VERSION_V1) {
+    requireOnly(
+      record,
+      ['schema_version', 'invocation_id', 'recorded_at', 'terminal_negative_outcome'],
+      'outcome',
+    );
+    const identity = validateOutcomeIdentity(record);
+    return {
+      // La version LUE, rendue telle quelle : c'est ce qui sera réécrit.
+      schema_version: INVOCATION_OUTCOME_SCHEMA_VERSION_V1,
+      invocation_id: identity.invocationId,
+      recorded_at: identity.recordedAt,
+      terminal_negative_outcome: validateTerminalNegativeOutcome(record['terminal_negative_outcome']),
+    };
+  }
+
+  requireOnly(record, ['schema_version', 'invocation_id', 'recorded_at', 'terminal_outcome'], 'outcome');
+  const identity = validateOutcomeIdentity(record);
   return {
     schema_version: INVOCATION_OUTCOME_SCHEMA_VERSION,
-    invocation_id: invocationId,
-    recorded_at: requireNonEmptyString(record['recorded_at'], 'recorded_at'),
-    terminal_negative_outcome: validateTerminalNegativeOutcome(record['terminal_negative_outcome']),
+    invocation_id: identity.invocationId,
+    recorded_at: identity.recordedAt,
+    terminal_outcome: validateTerminalOutcome(record['terminal_outcome']),
   };
 }
 
@@ -464,7 +663,14 @@ export function validateInvocationOutcomeRecord(value: unknown): InvocationOutco
  * Valide le document **entier**.
  *
  * Un document présent mais non conforme est une **corruption de persistance**,
- * jamais une absence de faits : il lève, et le motif le dit.
+ * jamais une absence de faits : il lève, et le motif le dit. Une version
+ * d'enregistrement inconnue n'est jamais ignorée en silence — l'ignorer
+ * rendrait un ensemble de faits plus petit et parfaitement plausible, c'est-à-
+ * dire exactement la corruption déguisée en absence que cette source refuse.
+ *
+ * La version rendue est celle du document **lu**. Le passage à la version
+ * courante appartient à l'écriture, qui seule sait qu'un modèle nouveau entre
+ * dans le conteneur.
  */
 export function validateInvocationOutcomeDocument(value: unknown): InvocationOutcomeDocument {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -473,15 +679,27 @@ export function validateInvocationOutcomeDocument(value: unknown): InvocationOut
   const record = value as Record<string, unknown>;
   requireOnly(record, ['schema_version', 'outcomes'], 'document');
 
-  if (record['schema_version'] !== INVOCATION_OUTCOME_SCHEMA_VERSION) {
-    throw invalid(`schema_version non pris en charge (${String(record['schema_version'])}).`);
+  const documentVersion = record['schema_version'];
+  const allowedVersions =
+    typeof documentVersion === 'number'
+      ? invocationOutcomeRecordVersionsFor(documentVersion)
+      : undefined;
+  if (typeof documentVersion !== 'number' || allowedVersions === undefined) {
+    throw invalid(`schema_version de document non pris en charge (${String(documentVersion)}).`, {
+      field: 'document.schema_version',
+      found: documentVersion,
+    });
   }
+
   const raw = record['outcomes'];
   if (!Array.isArray(raw)) throw invalid('outcomes doit être une liste.');
 
+  // UN seul domaine d'unicité, toutes versions confondues. Deux ensembles
+  // séparés par version laisseraient un fait v1 et un fait courant revendiquer
+  // la même invocation, ce que l'exclusivité terminale interdit.
   const seen = new Set<string>();
   const outcomes = raw.map((entry) => {
-    const outcome = validateInvocationOutcomeRecord(entry);
+    const outcome = validateInvocationOutcomeRecord(entry, allowedVersions);
     if (seen.has(outcome.invocation_id)) {
       throw invalid(`${outcome.invocation_id} apparaît deux fois.`, { invocationId: outcome.invocation_id });
     }
@@ -489,5 +707,5 @@ export function validateInvocationOutcomeDocument(value: unknown): InvocationOut
     return outcome;
   });
 
-  return { schema_version: INVOCATION_OUTCOME_SCHEMA_VERSION, outcomes };
+  return { schema_version: documentVersion, outcomes };
 }

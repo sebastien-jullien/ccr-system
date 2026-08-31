@@ -87,7 +87,7 @@ import {
 import { runtimeSettingsOf } from './native-start-service.ts';
 import type { RunRuntimeSettings } from './run-service.ts';
 import { withNativeMutation } from './native-mutation-boundary.ts';
-import { commitNegativeOutcome } from './invocation-outcome-writer.ts';
+import { commitInvocationOutcome } from './invocation-outcome-writer.ts';
 
 // ==========================================================================
 // SECTION 1/3 — Parseur strict, PUR
@@ -817,7 +817,7 @@ export async function proposeReconciliationByModel(
     // L'issue est commitée AVANT d'être rendue. `UNEXPECTED` reste la valeur
     // publique du résultat — inchangée —, mais n'est pas persistée : côté
     // durable, un code inconnu s'omet plutôt que de se déguiser en cause.
-    await commitNegativeOutcome(
+    await commitInvocationOutcome(
       deps,
       request.runId,
       'v5-propose-model-outcome',
@@ -852,7 +852,7 @@ export async function proposeReconciliationByModel(
   if (parsed.outcome === 'INVALID') {
     // Le vocabulaire de motif V5 est conservé tel quel : ni traduit, ni fusionné
     // avec ceux de V3 et V4, qui comptent d'autres valeurs.
-    await commitNegativeOutcome(deps, request.runId, 'v5-propose-model-outcome', plan.invocationId, {
+    await commitInvocationOutcome(deps, request.runId, 'v5-propose-model-outcome', plan.invocationId, {
       kind: 'V5_INVALID_OUTPUT',
       reason: parsed.reason,
       at: parsed.at,
@@ -867,6 +867,17 @@ export async function proposeReconciliationByModel(
   if (parsed.proposals.length === 0) {
     // Succès opérationnel du chemin modèle. Ne signifie ni « rien à réconcilier »,
     // ni accord, ni absence de désaccord, ni absence de matière.
+    //
+    // Aucune proposition n'est écrite : sans fait durable, cette issue serait
+    // après redémarrage indiscernable d'une tentative interrompue. Elle est
+    // commitée AVANT d'être rendue, sous une acquisition courte distincte.
+    await commitInvocationOutcome(
+      deps,
+      request.runId,
+      'v5-propose-model-outcome',
+      plan.invocationId,
+      { kind: 'VALID_ZERO' },
+    );
     return { kind: 'VALID_ZERO', invocation_id: plan.invocationId };
   }
 
@@ -881,7 +892,7 @@ export async function proposeReconciliationByModel(
   });
 
   if (persisted.kind === 'REFUSED') {
-    await commitNegativeOutcome(deps, request.runId, 'v5-propose-model-outcome', plan.invocationId, {
+    await commitInvocationOutcome(deps, request.runId, 'v5-propose-model-outcome', plan.invocationId, {
       kind: 'V5_REVALIDATION_REFUSED',
       check: persisted.check as ProposalRevalidationCheck,
       detail: persisted.detail as string,
