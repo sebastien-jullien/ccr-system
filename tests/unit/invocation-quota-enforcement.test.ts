@@ -34,6 +34,7 @@ import { continueNativeInitialization } from '../../src/services/native-recovery
 import { expertSlotTarget } from '../../src/services/native-target-resolver.ts';
 import { runPaths } from '../../src/store/layout.ts';
 import { openInvocationLedger } from '../../src/store/invocation-ledger.ts';
+import { acquireRunLock } from '../../src/lock/run-lock.ts';
 import { openInvocationPolicyStore } from '../../src/store/invocation-policy-store.ts';
 import { openEventStore } from '../../src/store/event-store.ts';
 import { openNativeEventStore } from '../../src/store/native-event-store.ts';
@@ -791,4 +792,130 @@ test('19 · les surfaces de politique restent inexistantes', async () => {
   const manager = await executable('cockpit/long-operations.ts');
   assert.equal(manager.includes('quota'), false);
   assert.equal(manager.includes('Quota'), false);
+});
+
+// ==========================================================================
+// Concurrence — l'admission et l'engagement tiennent dans une seule détention
+// ==========================================================================
+//
+// Le contrôle de quota de START s'observait autrefois HORS de la sérialisation
+// qui écrit l'engagement. Entre les deux, une autre opération gouvernée du même
+// run pouvait s'engager, et le compte durable dépassait la limite.
+//
+// Les deux tests ci-dessous éprouvent la propriété par le comportement :
+//
+// ```text
+// 20  la capacité n'est PLUS observable hors de la détention
+//     — un tiers détenant le verrou fait échouer START AVANT toute lecture de
+//       quota, et aucun nettoyage n'est écrit au-dehors
+// 21  pendant la détention de START, aucune autre opération gouvernée ne peut
+//     s'engager — le compte durable ne dépasse jamais la limite
+// ```
+
+test('20 · la capacité n’est pas observable hors de la sérialisation', async () => {
+  const h = await harness();
+  try {
+    // Politique épuisée d'avance, ET verrou détenu par un tiers. Les deux
+    // refus sont donc possibles ; seul l'ordre les départage.
+    let held: Awaited<ReturnType<typeof acquireRunLock>> | undefined;
+    const result = await startNativeRun(
+      h.deps,
+      { title: 'Natif', cwd: WORKSPACE, prompt: MISSION, runtimeConfig: nativeRuntimeConfig() },
+      {
+        onAllocated: async (runId) => {
+          await setPolicy(h.runsDir, runId, 0);
+          held = await acquireRunLock(runPaths(h.runsDir, runId), 'tiers-concurrent');
+        },
+      },
+    );
+    await held?.release();
+
+    assert.ok(result.failure, 'la création est refusée');
+
+    // Le refus est celui du VERROU, pas celui du quota : la capacité n'a pas
+    // été lue. Tant que le contrôle vivait hors de la sérialisation, c'est le
+    // refus de quota qui remontait ici — la lecture précédait le verrou.
+    assert.ok(isCcrError(result.failure.error));
+    assert.equal((result.failure.error as CcrError).code, 'RUN_ALREADY_LOCKED');
+    assert.equal(expectRefusal(result.failure.error), false);
+
+    assert.equal(h.providerCalls(), 0);
+    assert.equal(await ledgerCount(h.runsDir, result.runId), 0);
+
+    // Et aucun nettoyage n'a été écrit hors du verrou : l'état reste celui que
+    // la naissance du run a posé. `FAILED_INITIALIZATION` ici signifierait
+    // qu'une mutation s'est produite pendant qu'un tiers détenait le verrou.
+    const state = await readPersistedState(runPaths(h.runsDir, result.runId));
+    if (state.execution_mode !== 'NATIVE_V21_EXECUTION') throw new Error('natif attendu');
+    assert.notEqual(state.document.state, 'FAILED_INITIALIZATION');
+    assert.equal(state.document.pending_operation, null);
+
+    const events = await nativeJournal(h.runsDir, result.runId);
+    assert.deepEqual(
+      events.map((event) => event.type),
+      ['run_created'],
+      'aucun fait de tentative',
+    );
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('21 · pendant l’engagement de START, aucune autre opération ne s’engage', async () => {
+  const h = await harness();
+  try {
+    // Limite 2 : l'auteur consomme la première unité, et le challenger tient la
+    // seconde. Une opération concurrente qui s'engagerait entre l'admission du
+    // challenger et son engagement porterait le compte à 3.
+    let concurrent: unknown;
+    let attempts = 0;
+
+    const result = await startNativeRun(
+      h.deps,
+      { title: 'Natif', cwd: WORKSPACE, prompt: MISSION, runtimeConfig: nativeRuntimeConfig() },
+      {
+        onAllocated: async (runId) => setPolicy(h.runsDir, runId, 2),
+        // Injecté à l'ouverture du ledger, DANS la mutation sérialisée : le
+        // quota vient d'être admis, l'engagement n'est pas encore écrit. C'est
+        // exactement l'instant qu'une opération concurrente devrait pouvoir
+        // exploiter, et qu'elle ne peut pas.
+        openInvocationLedger: async (paths, runId, options) => {
+          attempts += 1;
+          if (attempts === 2) {
+            // Second slot : l'auteur est lié, donc un envoi humain vers lui est
+            // résoluble et tenterait réellement de s'engager.
+            concurrent = await sendNativeMessage(
+              h.deps,
+              runId,
+              expertSlotTarget('author'),
+              'Message concurrent.',
+            ).then(
+              () => undefined,
+              (error: unknown) => error,
+            );
+          }
+          return openInvocationLedger(paths, runId, options);
+        },
+      },
+    );
+
+    assert.equal(result.failure, undefined, 'les deux slots aboutissent');
+    assert.equal(attempts, 2, 'le ledger est ouvert une fois par slot engagé');
+
+    // L'opération concurrente a bien été tentée, et refusée : START détenait le
+    // verrou depuis son admission de quota jusqu'à son engagement.
+    assert.notEqual(concurrent, undefined, 'la tentative concurrente a eu lieu');
+    assert.ok(isCcrError(concurrent));
+    assert.equal((concurrent as CcrError).code, 'RUN_ALREADY_LOCKED');
+
+    // Le compte durable ne dépasse jamais la limite.
+    const consumed = await ledgerCount(h.runsDir, result.runId);
+    assert.equal(consumed, 2);
+    assert.ok(consumed <= 2, 'committed_count ≤ maxInvocations');
+
+    // Aucune unité fantôme : deux slots, deux appels fournisseur.
+    assert.equal(h.providerCalls(), 2);
+  } finally {
+    await h.cleanup();
+  }
 });

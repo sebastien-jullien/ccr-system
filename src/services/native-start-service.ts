@@ -394,22 +394,6 @@ export async function initializeNativeSlot(
   const binding = ctx.manifestRef.manifest.experts[slot];
   const adapter = ctx.adapters[binding.provider];
 
-  // ---- Politique de quota (V2.2-IMP-08).
-  //
-  // Juste-à-temps, pour **ce** slot : le compte est relu du journal réel, si
-  // bien qu'une tentative précédente réussie a déjà consommé son unité. Rien
-  // n'est réservé d'avance, et un refus survient avant le moindre fait durable
-  // — pas de prompt, pas de contexte de reprise, aucun agent.
-  try {
-    await assertInvocationQuotaAvailable(ctx.paths, ctx.manifestRef.manifest.run_id);
-  } catch (refusal) {
-    // Le slot reste manquant, et le run redevient honnêtement récupérable.
-    // Aucun `process_failed` : la décision est celle de CCR, pas une panne de
-    // l'expert.
-    await releaseSlotWithoutAttempt(ctx);
-    throw refusal;
-  }
-
   /**
    * Fermeture d'une tentative dont CCR sait qu'aucun fournisseur n'a été appelé
    * (`V2.2-IMP-04`).
@@ -445,13 +429,13 @@ export async function initializeNativeSlot(
 
   // ---- Mutation courte AVANT fournisseur.
   //
-  // Intention, contexte de reprise et engagement durable forment **une seule**
-  // mutation sérialisée. Auparavant, ces trois écritures traversaient une
-  // fenêtre non sérialisée : deux handles de ledger ouverts concurremment
-  // dérivent la même séquence à l'ouverture, l'incrémentent localement sans
-  // relire le disque, et allouent alors le même `invocation_id`. Le doublon
-  // n'était détecté qu'à la relecture suivante, qui déclarait le journal
-  // entier invalide.
+  // Admission de quota, intention, contexte de reprise et engagement durable
+  // forment **une seule** mutation sérialisée. Auparavant, ces écritures
+  // traversaient une fenêtre non sérialisée : deux handles de ledger ouverts
+  // concurremment dérivent la même séquence à l'ouverture, l'incrémentent
+  // localement sans relire le disque, et allouent alors le même
+  // `invocation_id`. Le doublon n'était détecté qu'à la relecture suivante, qui
+  // déclarait le journal entier invalide.
   //
   // La garantie d'unicité vient de la sérialisation de l'opération, jamais de
   // la variable de séquence locale du handle ni du format du journal.
@@ -459,6 +443,31 @@ export async function initializeNativeSlot(
   // L'appel fournisseur reste **hors** de cette section : le verrou ne couvre
   // pas une latence de fournisseur.
   const { promptEvent, dispatch } = await ctx.serialize('native-start-dispatch', async () => {
+    // ---- Politique de quota (V2.2-IMP-08).
+    //
+    // Juste-à-temps, pour **ce** slot : le compte est relu du journal réel, si
+    // bien qu'une tentative précédente réussie a déjà consommé son unité. Rien
+    // n'est réservé d'avance, et un refus survient avant le moindre fait
+    // durable de cette tentative — pas de prompt, pas de contexte de reprise,
+    // aucun agent.
+    //
+    // Le contrôle est la **première** opération de la mutation, et il s'y
+    // trouve pour une raison de concurrence : observer la capacité hors de la
+    // sérialisation qui écrira l'engagement laisserait une autre opération
+    // gouvernée s'engager entre les deux, et le compte durable dépasserait
+    // alors la limite. Capacité observée et engagement écrit tiennent donc dans
+    // une seule détention exclusive du verrou de run.
+    try {
+      await assertInvocationQuotaAvailable(ctx.paths, ctx.manifestRef.manifest.run_id);
+    } catch (refusal) {
+      // Le slot reste manquant, et le run redevient honnêtement récupérable.
+      // Aucun `process_failed` : la décision est celle de CCR, pas une panne de
+      // l'expert. Ce nettoyage s'exécute sous la sérialisation qui vient de
+      // constater le refus, jamais au-dehors.
+      await releaseSlotWithoutAttempt(ctx);
+      throw refusal;
+    }
+
     const promptEventInner = await ctx.events.append({
       round: ctx.state.round,
       actor: 'human',
