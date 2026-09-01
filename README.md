@@ -154,7 +154,7 @@ ccr pause                     # puis : ccr handoff author
 ccr resume
 ```
 
-`ccr start` accepte `--author-provider` et `--challenger-provider`, ainsi que `--max-invocations` pour poser une limite CCR d'appels sur ce run — à la création, et définitivement.
+`ccr start` accepte `--author-provider` et `--challenger-provider`, ainsi que `--max-invocations` pour poser une limite stricte du nombre d'invocations CCR durablement engagées sur ce run — à la création, et définitivement. Ce sont les engagements durables qui sont comptés, jamais les appels fournisseurs observés.
 
 **Dossier et débat**
 
@@ -257,9 +257,9 @@ Les faits historiques ne sont pas réécrits. Une confirmation, une contestation
 Trois grandeurs distinctes, jamais fusionnées :
 
 ```text
-Invocation         ce que CCR a déclenché       comptable exactement
-UsageObservation   ce qui a été observé         provenance obligatoire
-CostEstimate       ce qui s'en dérive           estimation versionnée
+Invocation         ce que CCR a durablement engagé  comptable exactement
+UsageObservation   ce qui a été observé             provenance obligatoire
+CostEstimate       ce qui s'en dérive               estimation versionnée
 ```
 
 Une invocation CCR n'est ni un appel externe confirmé, ni un événement de facturation. Un montant rapporté par un fournisseur est une grandeur distincte d'une estimation CCR, et ne vient jamais silencieusement combler son absence.
@@ -348,6 +348,7 @@ Le contenu produit par un modèle est traité comme non fiable : il est analysé
 | [`docs/design-foundations.md`](docs/design-foundations.md) | les principes de conception dont CCR part |
 | [`docs/design-history.md`](docs/design-history.md) | histoire intellectuelle rétrospective de CCR |
 | [`examples/cache-showcase/walkthrough/run-CCR-20260830-001.md`](examples/cache-showcase/walkthrough/run-CCR-20260830-001.md) | traversée réelle de bout en bout — compte rendu curé d'un run canonique sur la fixture de conception de cache |
+| [`examples/auditability-showcase/walkthrough/run-CCR-20260901-002.md`](examples/auditability-showcase/walkthrough/run-CCR-20260901-002.md) | traversée réelle d'auditabilité — compte rendu curé d'un run canonique où l'état durable a corrigé une interprétation vivante prématurée |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | comment contribuer |
 | [`SECURITY.md`](SECURITY.md) | signalement de vulnérabilité et frontières de confiance |
 | [`AGENTS.md`](AGENTS.md) · [`CLAUDE.md`](CLAUDE.md) | instructions de projet pour le travail assisté par IA |
