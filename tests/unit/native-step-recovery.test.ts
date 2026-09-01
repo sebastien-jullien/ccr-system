@@ -25,7 +25,7 @@ import type { CcrErrorCode } from '../../src/core/errors.ts';
 import type { ExpertSlotId, ProviderKind } from '../../src/core/expert.ts';
 import { NATIVE_RUNTIME_CONFIG_SCHEMA_VERSION } from '../../src/core/run-native.ts';
 import type { NativeCcrEvent, NativeRunRuntimeConfig } from '../../src/core/run-native.ts';
-import { startNativeRun } from '../../src/services/native-start-service.ts';
+import { DEFAULT_NATIVE_BINDINGS, startNativeRun } from '../../src/services/native-start-service.ts';
 import type { NativeExpertBindings } from '../../src/services/native-start-service.ts';
 import { stepNativeRun } from '../../src/services/native-step-service.ts';
 import { planNativeStep } from '../../src/services/native-step-planner.ts';
@@ -126,6 +126,20 @@ async function restore(paths: { state: string; events: string }, snapshot: Snaps
   await writeFile(paths.events, snapshot.events, 'utf8');
 }
 
+/**
+ * Session que le harnais attribue à un slot, sous la liaison du run.
+ *
+ * Les faits semés doivent être cohérents avec la liaison réellement
+ * construite : une session recopiée en dur serait refusée par le journal pour
+ * une raison étrangère à ce que le test éprouve.
+ */
+function sessionOfSlot(
+  slot: ExpertSlotId,
+  bindings: NativeExpertBindings = DEFAULT_NATIVE_BINDINGS,
+): string {
+  return `${bindings[slot]}-1`;
+}
+
 async function startedRun(h: Harness, dir: string, bindings?: NativeExpertBindings): Promise<string> {
   const result = await startNativeRun(h.deps, {
     title: 'T',
@@ -171,7 +185,11 @@ async function runStepCapturingWindows(h: Harness, dir: string, bindings?: Nativ
   const paths = runPaths(h.runsDir, runId);
 
   let inFlight: Snapshot | undefined;
-  const target = bindings === undefined ? h.adapters.claude : h.adapters[bindings.challenger];
+  // Le STEP #1 transfère `author → challenger` : l'adaptateur instrumenté est
+  // celui qui porte RÉELLEMENT ce slot. La liaison du run — explicite ou par
+  // défaut — en décide ; recopier une convention ici instrumenterait le mauvais
+  // moteur, et les captures resteraient silencieusement `undefined`.
+  const target = h.adapters[(bindings ?? DEFAULT_NATIVE_BINDINGS).challenger];
   const original = target.resume.bind(target);
   (target as { resume: typeof target.resume }).resume = async (session, prompt) => {
     inFlight = await capture(paths);
@@ -249,7 +267,7 @@ test('1–2 · W0 — un transfert abandonné avant tout appel est distinct d’
       actor: 'system',
       type: 'prompt_sent',
       target_expert_slot_id: 'challenger',
-      session_id: 'claude-1',
+      session_id: sessionOfSlot('challenger'),
       content: 'SOURCE_EXPERT: AUTHOR',
       based_on: [source.event_id],
       timestamp: AT,
@@ -546,7 +564,7 @@ test('24–26 · le planificateur refuse une source quarantainée, sans remonter
       actor: 'expert',
       type: 'assistant_response',
       expert_slot_id: 'author',
-      session_id: 'codex-1',
+      session_id: sessionOfSlot('author'),
       content: 'nouvelle position AUTHOR',
       timestamp: AT,
     });
@@ -594,15 +612,18 @@ test('29–31 · un refus de taille et les échecs déterministes ne sont pas de
     assert.equal(failedView.status, 'NONE', 'un échec conclu n’est pas une incertitude');
     assert.equal(failedView.requiresHumanAcknowledgement, false);
 
-    // 31 · session dérivée : même conclusion.
+    // 31 · session dérivée : même conclusion. La dérive est armée sur le
+    // fournisseur qui porte RÉELLEMENT la cible du transfert — sinon aucune
+    // dérive ne se produit, et le refus attendu n'a jamais lieu.
     const drifting = harness(runsDir);
     const driftingRun = await startedRun(drifting, dir);
-    const claude = drifting.adapters.claude;
-    (claude as { resume: typeof claude.resume }).resume = async () => {
+    const targetProvider = DEFAULT_NATIVE_BINDINGS.challenger;
+    const target = drifting.adapters[targetProvider];
+    (target as { resume: typeof target.resume }).resume = async () => {
       const at = new Date(0).toISOString();
       return {
-        agent: 'claude' as const,
-        sessionId: 'claude-autre',
+        agent: targetProvider,
+        sessionId: `${targetProvider}-autre`,
         content: 'x',
         exitCode: 0,
         startedAt: at,
@@ -750,7 +771,7 @@ async function inFlightWindow(
       actor: 'system',
       type: 'prompt_sent',
       target_expert_slot_id: 'challenger',
-      session_id: 'claude-1',
+      session_id: sessionOfSlot('challenger'),
       content: 'SOURCE_EXPERT: AUTHOR',
       based_on: [source.event_id],
       timestamp: AT,
@@ -794,7 +815,7 @@ async function engage(
         source_event_id: window.sourceEventId,
         round: 1,
         prompt_event_id: prompt?.event_id ?? null,
-        session_id: 'claude-1',
+        session_id: sessionOfSlot('challenger'),
         return_state: 'READY',
         return_control: 'AUTOMATION',
         started_at: AT,
@@ -1115,7 +1136,7 @@ test('1G.2 F · les issues voisines gardent leur sens', async () => {
       actor: 'system',
       type: 'process_failed',
       target_expert_slot_id: 'challenger',
-      session_id: 'claude-1',
+      session_id: sessionOfSlot('challenger'),
       content: 'échec',
       details: { code: 'AGENT_TIMEOUT' },
       based_on: [prompt?.event_id ?? ''],

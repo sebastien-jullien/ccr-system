@@ -25,7 +25,7 @@ import type { ExpertSlotId, ProviderKind } from '../../src/core/expert.ts';
 import { NATIVE_RUNTIME_CONFIG_SCHEMA_VERSION } from '../../src/core/run-native.ts';
 import type { NativeCcrEvent, NativeRunRuntimeConfig } from '../../src/core/run-native.ts';
 import type { RunState } from '../../src/core/state.ts';
-import { startNativeRun } from '../../src/services/native-start-service.ts';
+import { DEFAULT_NATIVE_BINDINGS, startNativeRun } from '../../src/services/native-start-service.ts';
 import type { NativeExpertBindings } from '../../src/services/native-start-service.ts';
 import { handoffNativeExpert } from '../../src/services/native-handoff-service.ts';
 import {
@@ -225,12 +225,18 @@ test('7–10 · un alias univoque résout, un alias ambigu ou absent refuse sans
   try {
     const runsDir = path.join(dir, 'runs');
 
-    // 7 · configuration mixte : l'alias désigne un seul expert.
+    // 7 · configuration mixte : l'alias désigne un seul expert. L'alias visé
+    // est celui du moteur qui porte le CHALLENGER, quel qu'il soit.
+    const challengerProvider = DEFAULT_NATIVE_BINDINGS.challenger;
     const mixed = harness(runsDir);
     const mixedRun = await suspendedRun(mixed, dir);
-    const viaAlias = await handoffNativeExpert(mixed.deps, mixedRun, providerAliasTarget('claude'));
+    const viaAlias = await handoffNativeExpert(
+      mixed.deps,
+      mixedRun,
+      providerAliasTarget(challengerProvider),
+    );
     assert.equal(viaAlias.expertSlot, 'challenger');
-    assert.deepEqual(mixed.interactives.map((call) => call.sessionId), ['claude-1']);
+    assert.deepEqual(mixed.interactives.map((call) => call.sessionId), [`${challengerProvider}-1`]);
 
     // 8–9 · same-provider : les deux alias échouent, pour deux raisons.
     const same = harness(runsDir, { sessions: { claude: ['S1', 'S2'] } });
@@ -331,7 +337,7 @@ test('11–16 · le handoff exige un run suspendu sous contrôle humain, et une 
           expert_slot: 'author',
           round: 0,
           prompt_event_id: 'evt_000001',
-          session_id: 'codex-1',
+          session_id: `${DEFAULT_NATIVE_BINDINGS.author}-1`,
           return_state: 'PAUSED',
           return_control: 'HUMAN',
           started_at: AT,
@@ -417,7 +423,7 @@ test('17–23 · l’ouverture est journalisée avant tout, le contexte survit j
     assert.equal(observations['startedJournal'], true, '17 · ouverture durable');
     assert.equal(observations['startedInteractives'], 0, '18 · aucun lancement');
     assert.equal(observations['pendingKind'], 'handoff', '19 · contexte durable');
-    assert.equal(observations['pendingSession'], 'claude-1');
+    assert.equal(observations['pendingSession'], `${DEFAULT_NATIVE_BINDINGS.challenger}-1`);
     assert.equal(observations['pendingPrompt'], result.startedEventId, 'le contexte nomme l’ouverture');
     assert.equal(observations['pendingActive'], 'challenger');
     assert.equal(observations['pendingInteractives'], 0, '19 · toujours aucun lancement');
@@ -459,8 +465,10 @@ test('24–28 · deux événements, causalement liés, et aucune conversation in
     // 24–25 · les deux événements nomment le slot, jamais le moteur.
     assert.equal(field(started, 'target_expert_slot_id'), 'author');
     assert.equal(field(finished, 'target_expert_slot_id'), 'author');
-    assert.equal(field(started, 'session_id'), 'codex-1');
-    assert.equal(field(finished, 'session_id'), 'codex-1');
+    // La session est celle de l'AUTHOR, cible du handoff ici.
+    const authorSession = `${DEFAULT_NATIVE_BINDINGS.author}-1`;
+    assert.equal(field(started, 'session_id'), authorSession);
+    assert.equal(field(finished, 'session_id'), authorSession);
 
     // 26 · la causalité est explicite, jamais temporelle.
     assert.deepEqual(finished?.based_on, [result.startedEventId]);
@@ -522,8 +530,14 @@ test('29–34 · le run reste exactement où il était, sous autorité humaine',
       // Le manifest est intact : aucun rebind, aucune session créée.
       const manifest = await readPersistedManifest(paths);
       if (manifest.execution_mode !== 'NATIVE_V21_EXECUTION') return assert.fail('run natif attendu');
-      assert.equal(manifest.manifest.experts.author.session_id, 'codex-1');
-      assert.equal(manifest.manifest.experts.challenger.session_id, 'claude-1');
+      assert.equal(
+        manifest.manifest.experts.author.session_id,
+        `${DEFAULT_NATIVE_BINDINGS.author}-1`,
+      );
+      assert.equal(
+        manifest.manifest.experts.challenger.session_id,
+        `${DEFAULT_NATIVE_BINDINGS.challenger}-1`,
+      );
 
       // 34 · aucun artefact de round.
       assert.equal((await readdir(paths.roundsDir)).length, 0);

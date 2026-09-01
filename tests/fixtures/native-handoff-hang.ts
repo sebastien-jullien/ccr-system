@@ -23,7 +23,7 @@ import type { AgentKind } from '../../src/core/run.ts';
 import type { InteractiveResult } from '../../src/process/process-runner.ts';
 import { NATIVE_RUNTIME_CONFIG_SCHEMA_VERSION } from '../../src/core/run-native.ts';
 import type { NativeRunRuntimeConfig } from '../../src/core/run-native.ts';
-import { startNativeRun } from '../../src/services/native-start-service.ts';
+import { DEFAULT_NATIVE_BINDINGS, startNativeRun } from '../../src/services/native-start-service.ts';
 import { handoffNativeExpert } from '../../src/services/native-handoff-service.ts';
 import { expertSlotTarget } from '../../src/services/native-target-resolver.ts';
 import type { AgentAdapters } from '../../src/services/run-service.ts';
@@ -97,10 +97,15 @@ const runtimeConfig: NativeRunRuntimeConfig = {
   },
 };
 
+// Le RÔLE décide, jamais le nom du fournisseur : c'est le CHALLENGER qui reçoit
+// le handoff, donc son adaptateur qui suspend. Lire la liaison plutôt que la
+// recopier évite qu'un changement de convention par défaut rende ce scénario
+// silencieusement inopérant — l'autre adaptateur lèverait « non utilisé », et
+// le marqueur ne serait jamais écrit.
+const challengerProvider = DEFAULT_NATIVE_BINDINGS.challenger;
 const adapters: AgentAdapters = {
-  // author = codex, challenger = claude : c'est claude qui reçoit le handoff.
-  codex: adapter('codex', 'codex-durable', false),
-  claude: adapter('claude', 'claude-durable', true),
+  claude: adapter('claude', 'claude-durable', challengerProvider === 'claude'),
+  codex: adapter('codex', 'codex-durable', challengerProvider === 'codex'),
 };
 
 const deps = { runsDir, now: (): Date => new Date(0), createAdapters: (): AgentAdapters => adapters };

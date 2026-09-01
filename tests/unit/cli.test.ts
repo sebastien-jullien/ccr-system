@@ -13,6 +13,7 @@ import { runCli } from '../../src/cli/main.ts';
 import type { CliIo } from '../../src/cli/main.ts';
 import type { AgentAdapters, RunServiceDeps } from '../../src/services/run-service.ts';
 import { startRun } from '../../src/services/run-service.ts';
+import { DEFAULT_NATIVE_BINDINGS } from '../../src/services/native-start-service.ts';
 import { createFakeAdapter } from '../helpers/fake-adapter.ts';
 import { TEST_RUNTIME_CONFIG } from '../helpers/runtime-config.ts';
 import path from 'node:path';
@@ -153,8 +154,12 @@ test('start crée un run natif et affiche les deux experts', async () => {
     assert.ok(io.text().includes('Run créé : CCR-'));
     // Les experts sont nommés par leur slot, leur moteur entre parenthèses :
     // c'est la seule forme qui reste vraie quand les deux partagent un moteur.
-    assert.ok(io.text().includes('author (codex) : session codex-thread-1'));
-    assert.ok(io.text().includes('challenger (claude) : session claude-uuid-1'));
+    // C'est cette FORME qui est éprouvée ; le moteur de chaque slot est lu dans
+    // la liaison par défaut plutôt que recopié en dur.
+    const sessions = { claude: 'claude-uuid-1', codex: 'codex-thread-1' } as const;
+    const { author, challenger } = DEFAULT_NATIVE_BINDINGS;
+    assert.ok(io.text().includes(`author (${author}) : session ${sessions[author]}`));
+    assert.ok(io.text().includes(`challenger (${challenger}) : session ${sessions[challenger]}`));
     assert.ok(io.text().includes('État : READY'));
   } finally {
     await cleanup();

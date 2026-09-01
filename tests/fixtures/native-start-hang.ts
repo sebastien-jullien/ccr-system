@@ -20,7 +20,7 @@ import type { AgentKind } from '../../src/core/run.ts';
 import type { InteractiveResult } from '../../src/process/process-runner.ts';
 import { NATIVE_RUNTIME_CONFIG_SCHEMA_VERSION } from '../../src/core/run-native.ts';
 import type { NativeRunRuntimeConfig } from '../../src/core/run-native.ts';
-import { startNativeRun } from '../../src/services/native-start-service.ts';
+import { DEFAULT_NATIVE_BINDINGS, startNativeRun } from '../../src/services/native-start-service.ts';
 import type { AgentAdapters } from '../../src/services/run-service.ts';
 
 const [runsDir, cwd, markerFile] = process.argv.slice(2);
@@ -87,10 +87,22 @@ const runtimeConfig: NativeRunRuntimeConfig = {
   },
 };
 
+// Le RÔLE décide, jamais le nom du fournisseur : l'AUTHOR répond et devient
+// durable, le CHALLENGER reste bloqué dans `adapter.start`. Lire la liaison
+// plutôt que la recopier évite qu'un changement de convention par défaut
+// inverse les deux et rende le scénario silencieusement inopérant.
+const authorProvider = DEFAULT_NATIVE_BINDINGS.author;
 const adapters: AgentAdapters = {
-  // author = codex répond ; challenger = claude reste bloqué.
-  codex: adapter('codex', 'codex-durable', false),
-  claude: adapter('claude', 'claude-jamais', true),
+  claude: adapter(
+    'claude',
+    authorProvider === 'claude' ? 'claude-durable' : 'claude-jamais',
+    authorProvider !== 'claude',
+  ),
+  codex: adapter(
+    'codex',
+    authorProvider === 'codex' ? 'codex-durable' : 'codex-jamais',
+    authorProvider !== 'codex',
+  ),
 };
 
 await startNativeRun(

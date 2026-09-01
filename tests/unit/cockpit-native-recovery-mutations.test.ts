@@ -42,7 +42,7 @@ import { readRunGeneration } from '../../src/store/run-directory.ts';
 import { runPaths } from '../../src/store/layout.ts';
 import { openNativeEventStore } from '../../src/store/native-event-store.ts';
 import { readPersistedManifest } from '../../src/store/native-store.ts';
-import { startNativeRun } from '../../src/services/native-start-service.ts';
+import { DEFAULT_NATIVE_BINDINGS, startNativeRun } from '../../src/services/native-start-service.ts';
 import { startRun } from '../../src/services/run-service.ts';
 import type { AgentAdapters, RunServiceDeps } from '../../src/services/run-service.ts';
 import { createFakeAdapter } from '../helpers/fake-adapter.ts';
@@ -156,6 +156,17 @@ async function refusal(h: Harness, runId: string, payload: Record<string, unknow
     return isCcrError(error) ? error.code : 'INATTENDU';
   }
   return '';
+}
+
+/**
+ * Session que le harnais attribue à un slot, sous la liaison par défaut.
+ *
+ * Les faits semés doivent rester cohérents avec le manifest réellement
+ * construit : une session recopiée en dur serait refusée par le journal pour
+ * une raison étrangère à ce que le test éprouve.
+ */
+function sessionOfSlot(slot: 'author' | 'challenger'): string {
+  return `${DEFAULT_NATIVE_BINDINGS[slot]}-1`;
 }
 
 async function nativeRun(h: Harness): Promise<string> {
@@ -293,7 +304,7 @@ test('7–8 · une vue périmée l’emporte sur la reprise, sans créneau ni fo
       actor: 'human',
       type: 'human_message',
       target_expert_slot_id: 'author',
-      session_id: 'codex-1',
+      session_id: sessionOfSlot('author'),
       content: 'envoi orphelin',
     });
     const journalBefore = await journalOf(h, runId);
@@ -328,7 +339,7 @@ test('9–11 · SEND : clôture avant appel, idempotence, et aucun autre domaine
       actor: 'human',
       type: 'human_message',
       target_expert_slot_id: 'author',
-      session_id: 'codex-1',
+      session_id: sessionOfSlot('author'),
       content: 'envoi orphelin',
     });
     await append(h, runId, {
@@ -336,7 +347,7 @@ test('9–11 · SEND : clôture avant appel, idempotence, et aucun autre domaine
       actor: 'human',
       type: 'human_handoff_started',
       target_expert_slot_id: 'challenger',
-      session_id: 'claude-1',
+      session_id: sessionOfSlot('challenger'),
       details: { state: 'READY', control: 'AUTOMATION' },
     });
     const initial = await recoveryOf(h, runId);
@@ -388,7 +399,7 @@ test('12–13 · HANDOFF : clôture avant terminal, et jamais de réouverture', 
       actor: 'human',
       type: 'human_handoff_started',
       target_expert_slot_id: 'challenger',
-      session_id: 'claude-1',
+      session_id: sessionOfSlot('challenger'),
       details: { state: 'READY', control: 'AUTOMATION' },
     });
 
@@ -441,7 +452,7 @@ test('14–16 · STEP : acquittement, note bit pour bit, et quarantaine côté m
       actor: 'system',
       type: 'prompt_sent',
       target_expert_slot_id: 'challenger',
-      session_id: 'claude-1',
+      session_id: sessionOfSlot('challenger'),
       content: 'enveloppe',
       based_on: [source.event_id],
     });
@@ -465,7 +476,7 @@ test('14–16 · STEP : acquittement, note bit pour bit, et quarantaine côté m
           source_event_id: source.event_id,
           round: 1,
           prompt_event_id: prompt,
-          session_id: 'claude-1',
+          session_id: sessionOfSlot('challenger'),
           return_state: 'READY',
           return_control: 'AUTOMATION',
           started_at: new Date().toISOString(),
@@ -533,7 +544,10 @@ test('18–20 · un slot réellement manquant : un créneau, un appel, et pas de
   const dir = await makeTempDir('ccr-17d-init-provider-');
   try {
     // Le challenger échoue au START : `CLEAN_MISSING` sur ce slot seul.
-    const h = await harness(dir, { failStartOf: 'claude' });
+    // L'échec est armé sur le fournisseur qui porte ce rôle sous la liaison
+    // réellement appliquée au run — sinon c'est l'author qui échouerait, et les
+    // DEUX slots deviendraient manquants.
+    const h = await harness(dir, { failStartOf: DEFAULT_NATIVE_BINDINGS.challenger });
     const started = await startNativeRun(h.deps, {
       title: 'T',
       cwd: process.cwd(),
@@ -559,8 +573,13 @@ test('18–20 · un slot réellement manquant : un créneau, un appel, et pas de
     assert.equal(h.manager.admitAttempts(), 1, 'une seule admission');
     assert.equal(h.manager.activeCount(), 0, 'créneau libéré');
     assert.equal(h.calls(), callsAfterStart + 1, 'un seul appel simulé');
-    // 19 · le slot complet n'a jamais été rejoué.
-    assert.equal(h.adapters.codex.calls.length, 1, 'author non rejoué');
+    // 19 · le slot complet n'a jamais été rejoué. C'est l'adaptateur de
+    // l'AUTHOR qui est compté, quel que soit le moteur qui porte ce rôle.
+    assert.equal(
+      h.adapters[DEFAULT_NATIVE_BINDINGS.author].calls.length,
+      1,
+      'author non rejoué',
+    );
     assert.equal((await recoveryOf(h, runId))['initialization']?.status, 'NONE');
     assert.ok(ok.receipt.revision_after !== undefined);
 
@@ -592,7 +611,7 @@ test('21 · un geste statiquement valide mais indisponible est refusé, jamais s
       actor: 'human',
       type: 'human_message',
       target_expert_slot_id: 'author',
-      session_id: 'codex-1',
+      session_id: sessionOfSlot('author'),
       content: 'envoi orphelin',
     });
     assert.equal((await recoveryOf(h, runId))['step']?.status, 'NONE');
@@ -750,7 +769,7 @@ test('28 · un geste indisponible n’est jamais remplacé par l’unique geste 
       actor: 'human',
       type: 'human_message',
       target_expert_slot_id: 'author',
-      session_id: 'codex-1',
+      session_id: sessionOfSlot('author'),
       content: 'envoi resté sans issue',
     });
     const view = await readNativeRecoveryHttpView({ runsDir: h.runsDir }, runId);

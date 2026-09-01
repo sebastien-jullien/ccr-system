@@ -41,6 +41,7 @@ import {
 import type { MutationResponse } from '../../src/cockpit/mutations-http.ts';
 import { readNativeRunHttpView } from '../../src/cockpit/native-read-http.ts';
 import { readRunGeneration } from '../../src/store/run-directory.ts';
+import { DEFAULT_NATIVE_BINDINGS } from '../../src/services/native-start-service.ts';
 import { runPaths } from '../../src/store/layout.ts';
 import { readPersistedManifest, readPersistedState } from '../../src/store/native-store.ts';
 import type { AgentAdapters, RunServiceDeps } from '../../src/services/run-service.ts';
@@ -264,9 +265,13 @@ test('1–4 · `POST /api/runs` crée un run natif, defaults gelés et permutati
     assert.equal(await readRunGeneration(h.runsDir, runId), 'NATIVE_V21_EXECUTION');
     const persisted = await readPersistedManifest(runPaths(h.runsDir, runId));
     if (persisted.execution_mode !== 'NATIVE_V21_EXECUTION') return assert.fail('run natif attendu');
-    // 2 · defauts gelés de V2.1.
-    assert.equal(persisted.manifest.experts.author.provider, 'codex');
-    assert.equal(persisted.manifest.experts.challenger.provider, 'claude');
+    // 2 · defauts gelés : la surface HTTP applique la convention de liaison du
+    // produit, sans en inventer une seconde.
+    assert.equal(persisted.manifest.experts.author.provider, DEFAULT_NATIVE_BINDINGS.author);
+    assert.equal(
+      persisted.manifest.experts.challenger.provider,
+      DEFAULT_NATIVE_BINDINGS.challenger,
+    );
     assert.equal(h.calls(), 2, 'deux positions initiales, deux appels simulés');
 
     // 3 · same-provider valide, et deux sessions distinctes.
@@ -335,7 +340,9 @@ test('7 · une initialisation partielle conserve le run et son identité', async
   const dir = await makeTempDir('ccr-17c-start-partial-');
   try {
     // Le challenger échoue : la doctrine V1 conserve la session de l'author.
-    const h = await harness(dir, { failStartOf: 'claude' });
+    // L'échec est armé sur le fournisseur qui **porte ce rôle**, jamais sur un
+    // nom choisi d'avance.
+    const h = await harness(dir, { failStartOf: DEFAULT_NATIVE_BINDINGS.challenger });
 
     const response = await executeStartMutation(
       {

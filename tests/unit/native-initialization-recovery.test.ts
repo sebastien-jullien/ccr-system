@@ -439,14 +439,18 @@ test('4 · W3 — session liée, `session_created` absent', async () => {
 });
 
 test('5–6 · échec propre — zéro puis une session', async () => {
-  for (const [failing, expectedMissing, expectedProviders] of [
-    ['codex', ['author', 'challenger'], ['codex', 'claude']],
-    ['claude', ['challenger'], ['claude']],
+  // Le scénario est paramétré par le RÔLE qui échoue, jamais par un moteur :
+  // l'AUTHOR est initialisé en premier, donc son échec laisse les deux slots
+  // manquants, tandis que celui du CHALLENGER n'en laisse qu'un.
+  const { author: authorProvider, challenger: challengerProvider } = DEFAULT_NATIVE_BINDINGS;
+  for (const [failingSlot, expectedMissing, expectedProviders] of [
+    ['author', ['author', 'challenger'], [authorProvider, challengerProvider]],
+    ['challenger', ['challenger'], [challengerProvider]],
   ] as const) {
     const dir = await makeTempDir('ccr-1d-clean-');
     try {
       const h = harness(path.join(dir, 'runs'), {
-        ...(failing === 'codex'
+        ...(DEFAULT_NATIVE_BINDINGS[failingSlot] === 'codex'
           ? { failCodex: () => new CcrError('AGENT_EXIT_NONZERO', 'échec') }
           : { failClaude: () => new CcrError('AGENT_TIMEOUT', 'expiré') }),
       });
@@ -457,7 +461,7 @@ test('5–6 · échec propre — zéro puis une session', async () => {
         runtimeConfig: nativeRuntime(),
       });
       const view = await inspectNativeInitialization(h.deps, started.runId);
-      assert.equal(view.status, 'CLEAN_MISSING', `échec ${failing}`);
+      assert.equal(view.status, 'CLEAN_MISSING', `échec ${failingSlot}`);
       assert.deepEqual(view.missingSlots, [...expectedMissing]);
       assert.deepEqual(view.requiredProviders, [...expectedProviders]);
       assert.equal(view.uncertainSlot, null, 'un échec terminé n’est pas une incertitude');
@@ -639,15 +643,18 @@ test('25–26 · une finalisation rejouée n’ajoute aucun fait, et le run se r
 // ==========================================================================
 
 test('14–15 · la continuation n’appelle que les slots réellement manquants', async () => {
-  for (const [failing, expectedCalls] of [
-    ['codex', ['codex', 'claude']],
-    ['claude', ['claude']],
+  // Paramétré par le RÔLE qui échoue au START : l'AUTHOR d'abord, donc son
+  // échec fait reprendre les deux slots ; celui du CHALLENGER, un seul.
+  const { author: authorProvider, challenger: challengerProvider } = DEFAULT_NATIVE_BINDINGS;
+  for (const [failingSlot, expectedCalls] of [
+    ['author', [authorProvider, challengerProvider]],
+    ['challenger', [challengerProvider]],
   ] as const) {
     const dir = await makeTempDir('ccr-1d-continue-');
     try {
       const runsDir = path.join(dir, 'runs');
       const first = harness(runsDir, {
-        ...(failing === 'codex'
+        ...(DEFAULT_NATIVE_BINDINGS[failingSlot] === 'codex'
           ? { failCodex: () => new CcrError('AGENT_EXIT_NONZERO', 'échec') }
           : { failClaude: () => new CcrError('AGENT_TIMEOUT', 'expiré') }),
       });
@@ -661,7 +668,7 @@ test('14–15 · la continuation n’appelle que les slots réellement manquants
       const second = harness(runsDir);
       const outcome = await continueNativeInitialization(second.deps, started.runId);
 
-      assert.deepEqual(second.calls.map((call) => call.provider), [...expectedCalls], `échec ${failing}`);
+      assert.deepEqual(second.calls.map((call) => call.provider), [...expectedCalls], `échec ${failingSlot}`);
       assert.deepEqual(second.calls.map((call) => call.prompt), expectedCalls.map(() => PROMPT));
       assert.equal(outcome.view.status, 'NONE');
 
@@ -671,7 +678,9 @@ test('14–15 · la continuation n’appelle que les slots réellement manquants
       assert.equal(outcome.state.next_step_source_slot, 'author');
 
       // 19 · aucun retry : un seul appel par slot manquant.
-      const perProvider = second.calls.filter((call) => call.provider === failing).length;
+      const perProvider = second.calls.filter(
+        (call) => call.provider === DEFAULT_NATIVE_BINDINGS[failingSlot],
+      ).length;
       assert.equal(perProvider, 1, 'aucun retry');
     } finally {
       await removeTempDir(dir);
@@ -801,7 +810,12 @@ test('20–24 · une incertitude exige une décision humaine, et ne rejoue jamai
 
     // 23 · une nouvelle tentative explicite est alors possible.
     const outcome = await continueNativeInitialization(h.deps, RUN_ID);
-    assert.deepEqual(h.calls.map((call) => call.provider), ['claude'], 'un nouvel appel, explicite');
+    // Le slot repris est le CHALLENGER : son moteur vient de la liaison.
+    assert.deepEqual(
+      h.calls.map((call) => call.provider),
+      [DEFAULT_NATIVE_BINDINGS.challenger],
+      'un nouvel appel, explicite',
+    );
     assert.equal(outcome.view.status, 'NONE');
     assert.equal(outcome.state.control, 'HUMAN');
   } finally {
@@ -1000,9 +1014,11 @@ test('1D.2 E · un run partiel ayant reçu un SEND redevient récupérable', asy
     // La continuation redevient possible, et ne reprend que le slot manquant.
     const outcome = await continueNativeInitialization(h.deps, RUN_ID);
     assert.equal(outcome.view.status, 'NONE');
+    // Le slot manquant est le CHALLENGER : son moteur vient de la liaison du
+    // manifest fabriqué, jamais d'un nom recopié.
     assert.deepEqual(
       h.calls.map((call) => call.provider),
-      ['claude'],
+      [DEFAULT_NATIVE_BINDINGS.challenger],
       'seul le slot manquant est initialisé',
     );
     assert.equal(outcome.state.state, 'READY');
@@ -1011,7 +1027,10 @@ test('1D.2 E · un run partiel ayant reçu un SEND redevient récupérable', asy
 
     const manifest = await readPersistedManifest(runPaths(h.runsDir, RUN_ID));
     if (manifest.execution_mode !== 'NATIVE_V21_EXECUTION') return assert.fail('run natif attendu');
-    assert.equal(manifest.manifest.experts.challenger.session_id, 'claude-1');
+    assert.equal(
+      manifest.manifest.experts.challenger.session_id,
+      `${DEFAULT_NATIVE_BINDINGS.challenger}-1`,
+    );
   } finally {
     await removeTempDir(dir);
   }

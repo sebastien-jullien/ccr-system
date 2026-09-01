@@ -27,7 +27,7 @@ import type { ExpertSlotId, ProviderKind } from '../../src/core/expert.ts';
 import { NATIVE_RUNTIME_CONFIG_SCHEMA_VERSION } from '../../src/core/run-native.ts';
 import type { NativeCcrEvent, NativeRunRuntimeConfig } from '../../src/core/run-native.ts';
 import type { RunState } from '../../src/core/state.ts';
-import { startNativeRun } from '../../src/services/native-start-service.ts';
+import { DEFAULT_NATIVE_BINDINGS, startNativeRun } from '../../src/services/native-start-service.ts';
 import type { NativeExpertBindings } from '../../src/services/native-start-service.ts';
 import { sendNativeMessage } from '../../src/services/native-send-service.ts';
 import { planNativeStepForRun } from '../../src/services/native-step-planner.ts';
@@ -235,9 +235,16 @@ test('C9–C12 · un alias univoque résout, un alias ambigu ou absent refuse sa
     // 9 · configuration mixte : l'alias désigne un seul expert.
     const mixed = harness(runsDir);
     const mixedRun = await startedRun(mixed, dir);
-    const viaAlias = await sendNativeMessage(mixed.deps, mixedRun, providerAliasTarget('claude'), MESSAGE);
+    // L'alias visé est celui du moteur qui porte le CHALLENGER.
+    const challengerProvider = DEFAULT_NATIVE_BINDINGS.challenger;
+    const viaAlias = await sendNativeMessage(
+      mixed.deps,
+      mixedRun,
+      providerAliasTarget(challengerProvider),
+      MESSAGE,
+    );
     assert.equal(viaAlias.expertSlot, 'challenger');
-    assert.deepEqual(mixed.resumes().map((call) => call.sessionId), ['claude-1']);
+    assert.deepEqual(mixed.resumes().map((call) => call.sessionId), [`${challengerProvider}-1`]);
 
     // 10–11 · same-provider : les deux alias échouent, pour deux raisons.
     const same = harness(runsDir, { claudeSessions: ['S1', 'S2'] });
@@ -329,9 +336,11 @@ test('E15–E19 · le contexte est durable avant l’appel, et le reste après l
     // 15–17 · observation pendant l'appel.
     let during: Record<string, unknown> | undefined;
     let journalDuring = '';
-    const claude = h.adapters.claude;
-    const original = claude.resume.bind(claude);
-    (claude as { resume: typeof claude.resume }).resume = async (session, prompt) => {
+    // La cible de cet envoi est le CHALLENGER : c'est son adaptateur qui est
+    // instrumenté, quel que soit le moteur qui porte ce rôle.
+    const targetAdapter = h.adapters[DEFAULT_NATIVE_BINDINGS.challenger];
+    const original = targetAdapter.resume.bind(targetAdapter);
+    (targetAdapter as { resume: typeof targetAdapter.resume }).resume = async (session, prompt) => {
       during = await readState();
       journalDuring = await readFile(paths.events, 'utf8');
       return original(session, prompt);
@@ -354,7 +363,7 @@ test('E15–E19 · le contexte est durable avant l’appel, et le reste après l
     const pendingDuring = during['pending_operation'] as Record<string, unknown>;
     assert.equal(pendingDuring['kind'], 'send', '16 · contexte durable avant l’appel');
     assert.equal(pendingDuring['expert_slot'], 'challenger');
-    assert.equal(pendingDuring['session_id'], 'claude-1');
+    assert.equal(pendingDuring['session_id'], `${DEFAULT_NATIVE_BINDINGS.challenger}-1`);
     assert.equal(pendingDuring['return_state'], 'PAUSED', 'l’état à restaurer est durable');
     assert.equal(during['round'], 0, '17 · round intact');
     assert.equal(during['next_step_source_slot'], 'author', '17 · curseur intact');
@@ -405,7 +414,10 @@ test('F20–F23 · G24–G26 · provenance native, causalité récupérable, rie
     // 21 · la réponse porte son slot et sa session.
     const response = fresh.find((event) => event.type === 'assistant_response');
     assert.equal((response as { expert_slot_id?: ExpertSlotId })?.expert_slot_id, 'challenger');
-    assert.equal((response as { session_id?: string })?.session_id, 'claude-1');
+    assert.equal(
+      (response as { session_id?: string })?.session_id,
+      `${DEFAULT_NATIVE_BINDINGS.challenger}-1`,
+    );
     assert.equal(response?.actor, 'expert');
 
     // 23 · la causalité message → réponse est récupérable, et unique.
@@ -713,11 +725,15 @@ test('2B.1 · un envoi n’efface plus le signalement d’une initialisation par
   try {
     const h = harness(path.join(dir, 'runs'));
     // Le challenger échoue à l'initialisation : une seule session liée.
+    const failingProvider = DEFAULT_NATIVE_BINDINGS.challenger;
     const failing = createFakeAdapter({
-      kind: 'claude',
+      kind: failingProvider,
       failStart: () => new CcrError('AGENT_TIMEOUT', 'échec du challenger'),
     });
-    const adapters = (): AgentAdapters => ({ claude: failing, codex: h.adapters.codex });
+    const adapters = (): AgentAdapters => ({
+      claude: failingProvider === 'claude' ? failing : h.adapters.claude,
+      codex: failingProvider === 'codex' ? failing : h.adapters.codex,
+    });
     const deps: RunServiceDeps = { ...h.deps, createAdapters: adapters };
 
     const started = await startNativeRun(deps, {

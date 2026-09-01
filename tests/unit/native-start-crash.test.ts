@@ -25,6 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { isCcrError } from '../../src/core/errors.ts';
+import { DEFAULT_NATIVE_BINDINGS } from '../../src/services/native-start-service.ts';
 import { listRunIds } from '../../src/store/layout.ts';
 import { runPaths } from '../../src/store/layout.ts';
 import { openNativeEventStore } from '../../src/store/native-event-store.ts';
@@ -99,7 +100,12 @@ test(
       const persisted = await readPersistedManifest(paths);
       assert.equal(persisted.execution_mode, 'NATIVE_V21_EXECUTION');
       if (persisted.execution_mode !== 'NATIVE_V21_EXECUTION') return;
-      assert.equal(persisted.manifest.experts.author.session_id, 'codex-durable');
+      // La session durable est celle de l'AUTHOR, quel que soit le fournisseur
+      // que la liaison par défaut lui attribue.
+      assert.equal(
+        persisted.manifest.experts.author.session_id,
+        `${DEFAULT_NATIVE_BINDINGS.author}-durable`,
+      );
       assert.equal(persisted.manifest.experts.challenger.session_id, null);
 
       const state = await readPersistedState(paths);

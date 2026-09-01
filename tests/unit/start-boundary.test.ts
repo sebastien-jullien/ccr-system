@@ -21,6 +21,7 @@ import type { CliIo } from '../../src/cli/main.ts';
 import { createCliDeps } from '../../src/cli/deps.ts';
 import { startRun } from '../../src/services/run-service.ts';
 import type { AgentAdapters, RunServiceDeps } from '../../src/services/run-service.ts';
+import { DEFAULT_NATIVE_BINDINGS } from '../../src/services/native-start-service.ts';
 import type { StartPreflightDeps } from '../../src/runtime/preflight-service.ts';
 import { CONFIG_FILE_NAME, writeConfig } from '../../src/config/config-store.ts';
 import { defaultConfig } from '../../src/config/config-schema.ts';
@@ -189,15 +190,22 @@ test('un échec fournisseur après allocation reste un FAILED_INITIALIZATION', a
     const io = capture();
     // L'AUTHOR est initialisé en premier : c'est donc le CHALLENGER qui doit
     // échouer pour que la propriété testée — « la session déjà créée est
-    // préservée » — reste celle d'origine.
-    const adapters: AgentAdapters = {
-      codex: createFakeAdapter({ kind: 'codex', sessionId: 'codex-1' }),
-      claude: createFakeAdapter({
-        kind: 'claude',
-        sessionId: 'claude-1',
-        failStart: () => new CcrError('AGENT_EXIT_NONZERO', 'claude a échoué', { details: { agent: 'claude' } }),
-      }),
-    };
+    // préservée » — reste celle d'origine. L'échec est armé sur le fournisseur
+    // qui **porte ce rôle** sous la liaison par défaut, jamais sur un nom de
+    // fournisseur choisi d'avance.
+    const challengerProvider = DEFAULT_NATIVE_BINDINGS.challenger;
+    const build = (kind: 'claude' | 'codex'): ReturnType<typeof createFakeAdapter> =>
+      createFakeAdapter({
+        kind,
+        sessionId: `${kind}-1`,
+        ...(kind === challengerProvider
+          ? {
+              failStart: () =>
+                new CcrError('AGENT_EXIT_NONZERO', `${kind} a échoué`, { details: { agent: kind } }),
+            }
+          : {}),
+      });
+    const adapters: AgentAdapters = { claude: build('claude'), codex: build('codex') };
 
     const code = await runCli(['start', '--title', 'T', '--prompt', 'p'], {
       io,
@@ -222,8 +230,12 @@ test('un échec fournisseur après allocation reste un FAILED_INITIALIZATION', a
     assert.equal(state.execution_mode, 'NATIVE_V21_EXECUTION', 'la CLI crée désormais du natif');
     assert.equal(state.document.state, 'FAILED_INITIALIZATION', 'sémantique inchangée');
     if (manifest.execution_mode !== 'NATIVE_V21_EXECUTION') return assert.fail('run natif attendu');
-    // La session déjà créée est préservée.
-    assert.equal(manifest.manifest.experts.author.session_id, 'codex-1');
+    // La session déjà créée est préservée : celle de l'AUTHOR, quel que soit
+    // le fournisseur que la liaison par défaut lui attribue.
+    assert.equal(
+      manifest.manifest.experts.author.session_id,
+      `${DEFAULT_NATIVE_BINDINGS.author}-1`,
+    );
     assert.equal(manifest.manifest.experts.challenger.session_id, null);
     assert.match(io.errorText(), /Initialisation incomplète/);
   } finally {

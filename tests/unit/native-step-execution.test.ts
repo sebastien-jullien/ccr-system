@@ -22,7 +22,7 @@ import type { CcrErrorCode } from '../../src/core/errors.ts';
 import type { ExpertSlotId, ProviderKind } from '../../src/core/expert.ts';
 import { NATIVE_ROUND_SCHEMA_VERSION, NATIVE_RUNTIME_CONFIG_SCHEMA_VERSION } from '../../src/core/run-native.ts';
 import type { NativeCcrEvent, NativeRunRuntimeConfig } from '../../src/core/run-native.ts';
-import { startNativeRun } from '../../src/services/native-start-service.ts';
+import { DEFAULT_NATIVE_BINDINGS, startNativeRun } from '../../src/services/native-start-service.ts';
 import type { NativeExpertBindings } from '../../src/services/native-start-service.ts';
 import { stepNativeRun } from '../../src/services/native-step-service.ts';
 import { planNativeStepForRun } from '../../src/services/native-step-planner.ts';
@@ -168,13 +168,16 @@ test('A1–A4 · deux STEP successifs alternent les slots et reprennent la bonne
     // 22 · START n'a créé aucun artefact de round.
     assert.deepEqual(await readdir(paths.roundsDir), []);
 
-    // ---- STEP #1 : AUTHOR (codex) → CHALLENGER (claude).
+    // ---- STEP #1 : AUTHOR → CHALLENGER. Les rôles portent le scénario ;
+    // le moteur de chacun est lu dans la liaison, jamais recopié.
+    const authorProvider = DEFAULT_NATIVE_BINDINGS.author;
+    const challengerProvider = DEFAULT_NATIVE_BINDINGS.challenger;
     const first = await stepNativeRun(h.deps, runId);
     assert.equal(first.sourceSlot, 'author');
     assert.equal(first.targetSlot, 'challenger');
     assert.deepEqual(
       h.resumes.map((call) => [call.provider, call.sessionId]),
-      [['claude', 'claude-1']],
+      [[challengerProvider, `${challengerProvider}-1`]],
       'seule la session du challenger est reprise',
     );
     assert.equal(first.round, 1);
@@ -183,24 +186,36 @@ test('A1–A4 · deux STEP successifs alternent les slots et reprennent la bonne
     assert.equal(first.state.state, 'READY');
     assert.equal(first.state.control, 'AUTOMATION');
 
-    // ---- STEP #2 : CHALLENGER (claude) → AUTHOR (codex).
+    // ---- STEP #2 : CHALLENGER → AUTHOR.
     const second = await stepNativeRun(h.deps, runId);
     assert.equal(second.sourceSlot, 'challenger');
     assert.equal(second.targetSlot, 'author');
+    // `collectResumes` parcourt les moteurs, pas la chronologie : l'ordre du
+    // tableau collecté ne dit donc rien de la succession. Ce qui est éprouvé
+    // ici, c'est que chaque expert a été repris exactement une fois et sur SA
+    // session ; la chronologie, elle, est déjà établie par l'assertion du
+    // STEP #1, qui observait une seule reprise.
     assert.deepEqual(
-      h.resumes.map((call) => [call.provider, call.sessionId]),
-      [
-        ['claude', 'claude-1'],
-        ['codex', 'codex-1'],
-      ],
+      h.resumes.filter((call) => call.provider === challengerProvider).map((call) => call.sessionId),
+      [`${challengerProvider}-1`],
+      'le challenger a été repris une fois, sur sa session',
+    );
+    assert.deepEqual(
+      h.resumes.filter((call) => call.provider === authorProvider).map((call) => call.sessionId),
+      [`${authorProvider}-1`],
       'le second transfert reprend la session de l’auteur',
     );
+    assert.equal(h.resumes.length, 2, 'exactement deux reprises, pas une de plus');
     assert.equal(second.round, 2);
     assert.equal(second.state.round, 2);
     assert.equal(second.state.next_step_source_slot, 'author');
 
     // Aucun démarrage supplémentaire : un STEP reprend, il ne crée jamais.
-    assert.deepEqual(h.starts, ['codex', 'claude'], 'les deux seuls `start` sont ceux du START');
+    assert.deepEqual(
+      h.starts,
+      [authorProvider, challengerProvider],
+      'les deux seuls `start` sont ceux du START',
+    );
   } finally {
     await removeTempDir(dir);
   }
@@ -254,11 +269,13 @@ test('C9–C12 · le contexte de reprise est durable avant l’appel, et le rest
       (await readJsonFile(paths.state)) as Record<string, unknown>;
 
     // 9–10 · pendant l'appel : contexte durable, round et curseur intacts.
-    h.adapters.claude.calls.length = 0;
+    // La cible du STEP #1 est le CHALLENGER : c'est son adaptateur qui est
+    // instrumenté, quel que soit le moteur qui porte ce rôle.
+    const targetAdapter = h.adapters[DEFAULT_NATIVE_BINDINGS.challenger];
+    targetAdapter.calls.length = 0;
     const duringCall = { captured: undefined as Record<string, unknown> | undefined };
-    const claudeAdapter = h.adapters.claude;
-    const originalResume = claudeAdapter.resume.bind(claudeAdapter);
-    (claudeAdapter as { resume: typeof claudeAdapter.resume }).resume = async (session, prompt) => {
+    const originalResume = targetAdapter.resume.bind(targetAdapter);
+    (targetAdapter as { resume: typeof targetAdapter.resume }).resume = async (session, prompt) => {
       duringCall.captured = await readState();
       return originalResume(session, prompt);
     };
@@ -330,7 +347,10 @@ test('D13–D17 · les événements du transfert portent la provenance native, e
 
     const response = fresh.find((event) => event.type === 'assistant_response');
     assert.equal((response as { expert_slot_id?: ExpertSlotId })?.expert_slot_id, 'challenger');
-    assert.equal((response as { session_id?: string })?.session_id, 'claude-1');
+    assert.equal(
+      (response as { session_id?: string })?.session_id,
+      `${DEFAULT_NATIVE_BINDINGS.challenger}-1`,
+    );
     assert.equal(response?.actor, 'expert');
 
     const completed = fresh.find((event) => event.type === 'round_completed') as
@@ -471,7 +491,7 @@ test('G30–G31 · un échec d’adapter ne se retente pas, et n’avance ni rou
     let attempts = 0;
     const h = harness(path.join(dir, 'runs'), {
       failResume: {
-        claude: () => {
+        [DEFAULT_NATIVE_BINDINGS.challenger]: () => {
           attempts += 1;
           return new CcrError('AGENT_TIMEOUT', 'le tour a expiré');
         },
@@ -503,7 +523,11 @@ test('G30–G31 · un échec d’adapter ne se retente pas, et n’avance ni rou
 test('G32–G33 · une session qui dérive est un échec fermé, sans réponse ni finalisation', async () => {
   const dir = await makeTempDir('ccr-1f-mismatch-');
   try {
-    const h = harness(path.join(dir, 'runs'), { resumeSessionId: { claude: 'claude-autre' } });
+    // La dérive est armée sur le moteur qui porte la CIBLE du transfert.
+    const targetProvider = DEFAULT_NATIVE_BINDINGS.challenger;
+    const h = harness(path.join(dir, 'runs'), {
+      resumeSessionId: { [targetProvider]: `${targetProvider}-autre` },
+    });
     const runId = await startedRun(h, dir);
     const paths = runPaths(h.runsDir, runId);
     const before = await journal(h.runsDir, runId);
@@ -519,8 +543,8 @@ test('G32–G33 · une session qui dérive est un échec fermé, sans réponse n
     assert.equal(fresh.filter((event) => event.type === 'round_completed').length, 0);
     const failure = fresh.find((event) => event.type === 'process_failed');
     assert.equal(failure?.details?.['code'], 'AGENT_SESSION_MISMATCH');
-    assert.equal(failure?.details?.['expected'], 'claude-1');
-    assert.equal(failure?.details?.['found'], 'claude-autre');
+    assert.equal(failure?.details?.['expected'], `${targetProvider}-1`);
+    assert.equal(failure?.details?.['found'], `${targetProvider}-autre`);
 
     const state = await readPersistedState(paths);
     // L'invariant fondamental du run est brisé : V2 classe ce cas `FAILED`.

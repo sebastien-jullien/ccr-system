@@ -27,7 +27,7 @@ import { NATIVE_RUNTIME_CONFIG_SCHEMA_VERSION } from '../../src/core/run-native.
 import type { NativeCcrEvent, NativeRunRuntimeConfig } from '../../src/core/run-native.ts';
 import type { UsageObservation } from '../../src/core/usage.ts';
 import type { InvocationDispatchRecord, UsageObservationRecord } from '../../src/core/usage-governance.ts';
-import { startNativeRun } from '../../src/services/native-start-service.ts';
+import { DEFAULT_NATIVE_BINDINGS, startNativeRun } from '../../src/services/native-start-service.ts';
 import type { NativeExpertBindings } from '../../src/services/native-start-service.ts';
 import { stepNativeRun } from '../../src/services/native-step-service.ts';
 import type { NativeStepSeams } from '../../src/services/native-step-service.ts';
@@ -524,15 +524,19 @@ test('session · un tour refusé avant `assistant_response` n’écrit aucun usa
   const dir = await makeTempDir('ccr-1b-mismatch-');
   try {
     const runsDir = `${dir}/runs`;
-    const adapters = {
-      claude: createFakeAdapter({
-        kind: 'claude',
-        startSessionIds: ['claude-1', 'claude-2'],
-        resumeSessionId: 'claude-derive',
-        usage: PROVIDER_USAGE,
-      }),
-      codex: createFakeAdapter({ kind: 'codex', startSessionIds: ['codex-1', 'codex-2'] }),
-    };
+    // La dérive est armée sur le moteur qui porte la CIBLE du STEP #1 — le
+    // CHALLENGER. Armée ailleurs, aucune dérive ne se produirait, et le refus
+    // attendu n'aurait jamais lieu.
+    const targetProvider = DEFAULT_NATIVE_BINDINGS.challenger;
+    const build = (kind: 'claude' | 'codex'): FakeAdapter =>
+      createFakeAdapter({
+        kind,
+        startSessionIds: [`${kind}-1`, `${kind}-2`],
+        ...(kind === targetProvider
+          ? { resumeSessionId: `${kind}-derive`, usage: PROVIDER_USAGE }
+          : {}),
+      });
+    const adapters = { claude: build('claude'), codex: build('codex') };
     const deps: RunServiceDeps = {
       runsDir,
       now: () => new Date(AT),

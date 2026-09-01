@@ -23,7 +23,7 @@ import type { AgentKind } from '../../src/core/run.ts';
 import type { InteractiveResult } from '../../src/process/process-runner.ts';
 import { NATIVE_RUNTIME_CONFIG_SCHEMA_VERSION } from '../../src/core/run-native.ts';
 import type { NativeRunRuntimeConfig } from '../../src/core/run-native.ts';
-import { startNativeRun } from '../../src/services/native-start-service.ts';
+import { DEFAULT_NATIVE_BINDINGS, startNativeRun } from '../../src/services/native-start-service.ts';
 import { stepNativeRun } from '../../src/services/native-step-service.ts';
 import type { AgentAdapters } from '../../src/services/run-service.ts';
 
@@ -98,10 +98,15 @@ const runtimeConfig: NativeRunRuntimeConfig = {
 };
 
 const hangOnResume = mode === 'p1';
+// Le RÔLE décide, jamais le nom du fournisseur : le STEP #1 transfère
+// `author → challenger`, c'est donc le CHALLENGER qui est repris, et son
+// adaptateur qui suspend. Lire la liaison plutôt que la recopier évite qu'un
+// changement de convention par défaut rende ce scénario silencieusement
+// inopérant — le transfert aboutirait, et le marqueur ne serait jamais écrit.
+const challengerProvider = DEFAULT_NATIVE_BINDINGS.challenger;
 const adapters: AgentAdapters = {
-  // author = codex, challenger = claude : c'est claude qui est repris au STEP #1.
-  codex: adapter('codex', 'codex-durable', false),
-  claude: adapter('claude', 'claude-durable', hangOnResume),
+  claude: adapter('claude', 'claude-durable', hangOnResume && challengerProvider === 'claude'),
+  codex: adapter('codex', 'codex-durable', hangOnResume && challengerProvider === 'codex'),
 };
 
 const deps = { runsDir, now: (): Date => new Date(0), createAdapters: (): AgentAdapters => adapters };

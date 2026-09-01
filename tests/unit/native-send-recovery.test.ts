@@ -37,7 +37,7 @@ import type { ProviderKind } from '../../src/core/expert.ts';
 import { NATIVE_RUNTIME_CONFIG_SCHEMA_VERSION } from '../../src/core/run-native.ts';
 import type { NativeCcrEvent, NativeRunRuntimeConfig } from '../../src/core/run-native.ts';
 import type { RunState } from '../../src/core/state.ts';
-import { startNativeRun } from '../../src/services/native-start-service.ts';
+import { DEFAULT_NATIVE_BINDINGS, startNativeRun } from '../../src/services/native-start-service.ts';
 import type { NativeExpertBindings } from '../../src/services/native-start-service.ts';
 import { sendNativeMessage } from '../../src/services/native-send-service.ts';
 import { planNativeStep } from '../../src/services/native-step-planner.ts';
@@ -216,7 +216,11 @@ async function sendCapturingWindows(
   }
 
   const slot = options.slot ?? 'challenger';
-  const provider = options.bindings === undefined ? (slot === 'author' ? 'codex' : 'claude') : options.bindings[slot];
+  // L'adaptateur instrumenté est celui qui porte RÉELLEMENT le slot visé :
+  // la liaison du run, explicite ou par défaut, en décide. Recopier une
+  // convention ici instrumenterait le mauvais moteur dès qu'elle change, et les
+  // captures resteraient silencieusement `undefined`.
+  const provider = (options.bindings ?? DEFAULT_NATIVE_BINDINGS)[slot];
   const target = h.adapters[provider];
   const original = target.resume.bind(target);
   let s1: Snapshot | undefined;
@@ -315,13 +319,19 @@ function livenessProjection(
  * et ne complete evidemment pas l'autre.
  */
 async function sendOnPartialRun(h: Harness, dir: string): Promise<PartialWindows> {
+  // L'échec est armé sur le fournisseur qui porte RÉELLEMENT le challenger :
+  // c'est le rôle qui définit ce scénario, jamais un nom de moteur.
+  const challengerProvider = DEFAULT_NATIVE_BINDINGS.challenger;
   const failing = createFakeAdapter({
-    kind: 'claude',
+    kind: challengerProvider,
     failStart: () => new CcrError('AGENT_TIMEOUT', 'échec du challenger'),
   });
   const deps: RunServiceDeps = {
     ...h.deps,
-    createAdapters: (): AgentAdapters => ({ claude: failing, codex: h.adapters.codex }),
+    createAdapters: (): AgentAdapters => ({
+      claude: challengerProvider === 'claude' ? failing : h.adapters.claude,
+      codex: challengerProvider === 'codex' ? failing : h.adapters.codex,
+    }),
   };
   const started = await startNativeRun(deps, {
     title: 'T',
@@ -785,7 +795,10 @@ test('21 · un échec durable dont le contexte a survécu se finalise, sans deve
       actor: 'system',
       type: 'process_failed',
       target_expert_slot_id: 'challenger',
-      session_id: 'claude-1',
+      // La session est LUE du manifest de ce run : un fait semé doit être
+      // cohérent avec la liaison réellement construite, sinon le journal le
+      // refuse pour une raison qui n'a rien à voir avec ce que le test éprouve.
+      session_id: persisted.manifest.experts.challenger.session_id ?? '',
       content: 'le fournisseur n’a pas répondu',
       details: { code: 'AGENT_TIMEOUT' },
       based_on: [w.promptEventId],

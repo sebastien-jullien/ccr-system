@@ -24,7 +24,7 @@ import type { AgentRuntimeProbe } from '../../src/runtime/agent-runtime-probe.ts
 import type { StartPreflightDeps } from '../../src/runtime/preflight-service.ts';
 import type { AgentAdapters, RunServiceDeps } from '../../src/services/run-service.ts';
 import { startRun } from '../../src/services/run-service.ts';
-import { startNativeRun } from '../../src/services/native-start-service.ts';
+import { DEFAULT_NATIVE_BINDINGS, startNativeRun } from '../../src/services/native-start-service.ts';
 import { sendNativeMessage } from '../../src/services/native-send-service.ts';
 import { handoffNativeExpert } from '../../src/services/native-handoff-service.ts';
 import { stepNativeRun } from '../../src/services/native-step-service.ts';
@@ -269,10 +269,14 @@ test('1–6 · une reprise se nomme entièrement, et ne traverse jamais la mauva
 
 test('7–9 · `initialization / continue` ne reprend que le slot réellement manquant', async () => {
   const h = await harness({
-    failStart: { claude: () => new CcrError('AGENT_TIMEOUT', 'le challenger a échoué') },
+    failStart: {
+      [DEFAULT_NATIVE_BINDINGS.challenger]: () =>
+        new CcrError('AGENT_TIMEOUT', 'le challenger a échoué'),
+    },
   });
   try {
-    // START partiel : l'author (codex) aboutit, le challenger (claude) échoue.
+    // START partiel : l'AUTHOR aboutit, le CHALLENGER échoue. Les rôles portent
+    // le scénario ; le moteur qui les incarne vient de la liaison par défaut.
     const started = await startNativeRun(h.deps, {
       title: 'T',
       cwd: h.runsDir,
@@ -296,14 +300,27 @@ test('7–9 · `initialization / continue` ne reprend que le slot réellement ma
       io.errorText(),
     );
 
-    // 7 · exactement un appel simulé, et c'est celui du slot manquant.
-    assert.deepEqual(healed.modelCalls(), ['claude:start'], 'un seul slot repris');
+    // 7 · exactement un appel simulé, et c'est celui du slot manquant — le
+    // CHALLENGER, quel que soit le moteur que la liaison lui attribue.
+    assert.deepEqual(
+      healed.modelCalls(),
+      [`${DEFAULT_NATIVE_BINDINGS.challenger}:start`],
+      'un seul slot repris',
+    );
     assert.equal(h.modelCalls().length, callsAfterStart, 'le slot complet n’est pas rejoué');
 
     const manifest = await readPersistedManifest(runPaths(h.runsDir, started.runId));
     if (manifest.execution_mode !== 'NATIVE_V21_EXECUTION') return assert.fail('run natif attendu');
-    assert.equal(manifest.manifest.experts.author.session_id, 'codex-1');
-    assert.equal(manifest.manifest.experts.challenger.session_id, 'claude-1');
+    // Les deux slots sont désormais liés : la session de chacun est celle du
+    // moteur que la liaison par défaut lui attribue.
+    assert.equal(
+      manifest.manifest.experts.author.session_id,
+      `${DEFAULT_NATIVE_BINDINGS.author}-1`,
+    );
+    assert.equal(
+      manifest.manifest.experts.challenger.session_id,
+      `${DEFAULT_NATIVE_BINDINGS.challenger}-1`,
+    );
     assert.ok(io.text().includes('RECOVERY initialization : NONE'));
     assert.ok(io.text().includes('control : HUMAN'));
 
@@ -338,7 +355,9 @@ test('10–12 · la reprise de transfert n’appelle aucun fournisseur, et sa qu
     const paths = runPaths(h.runsDir, runId);
     let inFlight: Snapshot | undefined;
     const adapters = h.deps.createAdapters('', {} as never);
-    const target = adapters.claude;
+    // L'adaptateur instrumenté est celui qui porte le slot CHALLENGER :
+    // la liaison par défaut en décide, jamais un nom de moteur.
+    const target = adapters[DEFAULT_NATIVE_BINDINGS.challenger];
     const original = target.resume.bind(target);
     (target as { resume: typeof target.resume }).resume = async (session, prompt) => {
       inFlight = { state: await readFile(paths.state, 'utf8'), events: await readFile(paths.events, 'utf8') };
@@ -430,7 +449,9 @@ test('13–15 · les trois gestes d’envoi écrivent exactement le fait du back
     let inFlight: Snapshot | undefined;
     let responded: Snapshot | undefined;
     const adapters = uncertain.deps.createAdapters('', {} as never);
-    const target = adapters.codex;
+    // L'adaptateur instrumenté est celui qui porte le slot AUTHOR :
+    // la liaison par défaut en décide, jamais un nom de moteur.
+    const target = adapters[DEFAULT_NATIVE_BINDINGS.author];
     const original = target.resume.bind(target);
     (target as { resume: typeof target.resume }).resume = async (session, prompt) => {
       inFlight = { state: await readFile(paths.state, 'utf8'), events: await readFile(paths.events, 'utf8') };
@@ -580,7 +601,9 @@ test('19–20 · une note humaine est obligatoire, et transmise telle quelle', a
     const paths = runPaths(h.runsDir, runId);
     let inFlight: Snapshot | undefined;
     const adapters = h.deps.createAdapters('', {} as never);
-    const target = adapters.codex;
+    // L'adaptateur instrumenté est celui qui porte le slot AUTHOR :
+    // la liaison par défaut en décide, jamais un nom de moteur.
+    const target = adapters[DEFAULT_NATIVE_BINDINGS.author];
     const original = target.resume.bind(target);
     (target as { resume: typeof target.resume }).resume = async (session, prompt) => {
       inFlight = { state: await readFile(paths.state, 'utf8'), events: await readFile(paths.events, 'utf8') };
@@ -778,7 +801,9 @@ test('32 · une résolution de transfert non commitée se termine par la CLI', a
     const paths = runPaths(h.runsDir, runId);
     let inFlight: Snapshot | undefined;
     const adapters = h.deps.createAdapters('', {} as never);
-    const target = adapters.claude;
+    // L'adaptateur instrumenté est celui qui porte le slot CHALLENGER :
+    // la liaison par défaut en décide, jamais un nom de moteur.
+    const target = adapters[DEFAULT_NATIVE_BINDINGS.challenger];
     const original = target.resume.bind(target);
     (target as { resume: typeof target.resume }).resume = async (session, prompt) => {
       inFlight = { state: await readFile(paths.state, 'utf8'), events: await readFile(paths.events, 'utf8') };
