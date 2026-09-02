@@ -20,7 +20,8 @@ import type { MaterialRepresentationInput } from '../services/evidence-service.t
 import type { Orientation } from '../core/evidence.ts';
 import { loadEffectiveConfig } from '../config/config-store.ts';
 import { requirePinnedSnapshot, updateRunRuntimeConfig } from '../services/run-runtime-service.ts';
-import { resolveRunsDir } from '../store/layout.ts';
+import { resolveRunsDir, runPaths } from '../store/layout.ts';
+import { readInvocationOutcomeFacts } from '../services/invocation-outcome-read.ts';
 import { loadRun } from '../store/state-store.ts';
 import type { AgentKind, AgentRole } from '../core/run.ts';
 import type { RunServiceDeps } from '../services/run-service.ts';
@@ -55,6 +56,7 @@ import {
   commandRespond,
 } from './reconciliation-dispatch.ts';
 import { formatNativeStatus } from './native-format.ts';
+import { formatInvocationOutcomeFacts } from './invocation-outcome-format.ts';
 import {
   isNativeRecoveryDomain,
   nativeRecoveryActionOf,
@@ -113,6 +115,16 @@ Usage :
   ccr list   [--runs-dir <répertoire>]
 
   ccr status [<run_id>] [--runs-dir <répertoire>]
+
+  ccr invocation-outcomes [<run_id>] [--invocation <invocation_id>]
+             [--runs-dir <répertoire>]
+             Lecture seule des faits dédiés d'issue d'invocation, dans leur
+             ordre d'ajout persisté. Une seule source est lue, et aucune autre
+             autorité n'est interrogée : ni registre d'engagement, ni
+             transcript natif, ni usage, ni objet de domaine.
+             Le filtre porte sur ce même ensemble. Un identifiant sans
+             enregistrement rend zéro fait — une cardinalité, jamais un
+             verdict : ni succès, ni échec, ni invocation inconnue.
 
   ccr send   <author|challenger> (<message> | --file <fichier>)
              [--run <run_id>] [--runs-dir <répertoire>]
@@ -556,6 +568,31 @@ async function commandStatus(deps: RunServiceDeps, parsed: ParsedArgs, io: CliIo
     return 0;
   }
   io.out(formatStatus(await getRunStatus(deps, target.runId)));
+  return 0;
+}
+
+/**
+ * Lecture des faits dédiés d'issue d'invocation.
+ *
+ * La CLI est une surface : elle résout le run, remet la requête au service, et
+ * met en forme ce qu'il rend. Elle n'ouvre aucun journal, n'interroge aucune
+ * autre autorité, et ne déduit rien d'un résultat vide.
+ */
+async function commandInvocationOutcomes(
+  deps: RunServiceDeps,
+  parsed: ParsedArgs,
+  io: CliIo,
+): Promise<number> {
+  const target = await resolveRunTarget(deps.runsDir, parsed.positionals[0]);
+  const invocationId = parsed.flags.get('invocation');
+
+  const view = await readInvocationOutcomeFacts(runPaths(deps.runsDir, target.runId), {
+    ...(invocationId === undefined ? {} : { invocationId }),
+  });
+
+  io.out(formatInvocationOutcomeFacts(view));
+  // Une requête exécutée est une réussite d'exécution CLI. La cardinalité du
+  // résultat n'entre pas dans ce code : zéro fait n'est pas une erreur.
   return 0;
 }
 
@@ -1498,6 +1535,11 @@ export async function runCli(
         const parsed = parseArgs(rest, commonFlags);
         const deps = overrides.deps ?? (await runCommandDeps(parsed));
         return await commandStatus(deps, parsed, io);
+      }
+      case 'invocation-outcomes': {
+        const parsed = parseArgs(rest, [...commonFlags, 'invocation']);
+        const deps = overrides.deps ?? (await runCommandDeps(parsed));
+        return await commandInvocationOutcomes(deps, parsed, io);
       }
       case 'send': {
         const parsed = parseArgs(rest, [...commonFlags, 'run', 'file']);
