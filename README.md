@@ -183,9 +183,14 @@ Chaque effet d'un acte de réconciliation est déclaré par son propre drapeau :
 ccr doctor                    # runtime, CLI fournisseurs, authentification, configuration
 ccr setup                     # configuration du poste, interactive
 ccr recover                   # sans action : affiche les gestes de reprise permis
+ccr invocation-outcomes       # lecture ; n'écrit rien
 ```
 
 `ccr recover` ne choisit jamais un geste à votre place, même lorsqu'un seul est disponible.
+
+`ccr invocation-outcomes [<run_id>] [--invocation <invocation_id>]` projette les faits d'issue d'invocation déjà persistés, dans leur ordre d'ajout. La projection est **centrée sur le fait** : elle énumère les enregistrements qui existent, jamais les invocations qui pourraient en porter un, et n'interroge aucune autre autorité — ni registre d'engagement, ni transcript natif, ni usage, ni objet de domaine.
+
+Une requête sans correspondance annonce qu'aucun fait dédié n'est enregistré. Ce n'est ni un succès, ni un échec, ni `VALID_ZERO`, ni une invocation inconnue, et cela n'affirme rien de ce que les autres autorités établissent. `VALID_ZERO`, lorsqu'il est enregistré, est rendu sous son code exact, accompagné de sa seule glose de cardinalité. **Aucune autorité générique de succès n'existe** : un succès qui produit son objet de domaine reste attesté par cet objet.
 
 Codes de sortie : `0` succès · `1` erreur CCR · `2` usage incorrect. `ccr` sans argument affiche l'aide complète.
 
