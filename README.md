@@ -192,6 +192,8 @@ ccr invocation-outcomes       # lecture ; n'écrit rien
 
 Une requête sans correspondance annonce qu'aucun fait dédié n'est enregistré. Ce n'est ni un succès, ni un échec, ni `VALID_ZERO`, ni une invocation inconnue, et cela n'affirme rien de ce que les autres autorités établissent. `VALID_ZERO`, lorsqu'il est enregistré, est rendu sous son code exact, accompagné de sa seule glose de cardinalité. **Aucune autorité générique de succès n'existe** : un succès qui produit son objet de domaine reste attesté par cet objet.
 
+Les genres d'issue, les motifs et la sémantique exacte de ce que la commande rend sont définis par [`docs/specs/invocation-outcome.md`](docs/specs/invocation-outcome.md).
+
 Codes de sortie : `0` succès · `1` erreur CCR · `2` usage incorrect. `ccr` sans argument affiche l'aide complète.
 
 ---
@@ -350,6 +352,7 @@ Le contenu produit par un modèle est traité comme non fiable : il est analysé
 | [`docs/specs/controversy.md`](docs/specs/controversy.md) | contrat courant de la controverse |
 | [`docs/specs/evidence.md`](docs/specs/evidence.md) | contrat courant des matériaux et adductions |
 | [`docs/specs/reconciliation.md`](docs/specs/reconciliation.md) | contrat courant de la réconciliation |
+| [`docs/specs/invocation-outcome.md`](docs/specs/invocation-outcome.md) | contrat courant de la projection des issues d'invocation |
 | [`docs/design-foundations.md`](docs/design-foundations.md) | les principes de conception dont CCR part |
 | [`docs/design-history.md`](docs/design-history.md) | histoire intellectuelle rétrospective de CCR |
 | [`examples/cache-showcase/walkthrough/run-CCR-20260830-001.md`](examples/cache-showcase/walkthrough/run-CCR-20260830-001.md) | traversée réelle de bout en bout — compte rendu curé d'un run canonique sur la fixture de conception de cache |

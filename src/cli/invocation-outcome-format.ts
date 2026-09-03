@@ -30,6 +30,15 @@ export const NO_INVOCATION_OUTCOME_FACT =
   "Aucun fait dédié d'issue d'invocation enregistré pour cette requête.";
 
 /**
+ * Point d'entrée normatif de la projection.
+ *
+ * Rendu **une seule fois par sortie non vide**, dans l'en-tête de commande. Une
+ * requête sans correspondance ne le porte pas : elle n'a aucun jeton à faire
+ * interpréter, et son énoncé de cardinalité se suffit.
+ */
+export const INVOCATION_OUTCOME_CONTRACT_REFERENCE = 'docs/specs/invocation-outcome.md';
+
+/**
  * Glose de `VALID_ZERO`, délibérément étroite.
  *
  * Elle décrit une cardinalité et une validité structurelle. Elle ne dit ni
@@ -102,7 +111,13 @@ export function formatInvocationOutcomeFacts(view: InvocationOutcomeFactsView): 
     return lines.join('\n');
   }
 
-  lines.push('  source     invocation-outcomes.json', '');
+  // Un seul pointeur, au niveau de la commande : ni par enregistrement, ni par
+  // jeton. C'est une aide de navigation, jamais une interface sémantique.
+  lines.push(
+    '  source     invocation-outcomes.json',
+    `  référence  ${INVOCATION_OUTCOME_CONTRACT_REFERENCE}`,
+    '',
+  );
 
   for (const fact of view.facts) {
     lines.push(...factLines(fact));

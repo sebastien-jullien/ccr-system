@@ -32,6 +32,15 @@ import path from 'node:path';
 
 import { runPaths } from '../../src/store/layout.ts';
 import type { RunPaths } from '../../src/store/layout.ts';
+import {
+  NATIVE_FAILURE_DETAIL_CODES,
+  TERMINAL_NEGATIVE_OUTCOME_KINDS,
+  V3_DETECTION_REASONS,
+  V4_ADDUCTION_REASONS,
+  V5_PROPOSAL_REASONS,
+  V5_REVALIDATION_CHECKS,
+} from '../../src/core/invocation-outcome.ts';
+import { INVOCATION_OUTCOME_CONTRACT_REFERENCE } from '../../src/cli/invocation-outcome-format.ts';
 import type { RunServiceDeps } from '../../src/services/run-service.ts';
 import type { CliIo } from '../../src/cli/main.ts';
 import { runCli } from '../../src/cli/main.ts';
@@ -526,5 +535,143 @@ test('T12 · la lecture n’importe aucune autre autorité', async () => {
   );
   for (const forbidden of ['store/', 'ledger', 'SUCCESS_EVIDENCE', 'INCONSISTENT']) {
     assert.ok(!formatter.includes(forbidden), `dépendance interdite : ${forbidden}`);
+  }
+});
+
+// --------------------------------------------------------------------------
+// T13 — couverture du contrat public
+//
+// Cette garde prouve la COUVERTURE, et rien d'autre : que chaque jeton
+// actuellement rendable figure au point d'entrée normatif. Elle ne prouve
+// **pas** que la définition qui l'accompagne soit exacte, suffisante ou bien
+// écrite. La qualité sémantique relève de la revue humaine.
+// --------------------------------------------------------------------------
+
+test('T13 · chaque jeton rendable figure au contrat public', async () => {
+  const spec = await readFile(
+    new URL('../../docs/specs/invocation-outcome.md', import.meta.url),
+    'utf8',
+  );
+
+  // Genres d'issue : les neuf négatifs, plus VALID_ZERO.
+  for (const kind of [...TERMINAL_NEGATIVE_OUTCOME_KINDS, 'VALID_ZERO']) {
+    assert.ok(spec.includes(kind), `genre d'issue absent du contrat : ${kind}`);
+  }
+
+  // Vocabulaires de motif — les trois familles, jamais fusionnées.
+  for (const reason of [
+    ...V3_DETECTION_REASONS,
+    ...V4_ADDUCTION_REASONS,
+    ...V5_PROPOSAL_REASONS,
+  ]) {
+    assert.ok(spec.includes(reason), `motif absent du contrat : ${reason}`);
+  }
+
+  // Contrôles fermés V5, et codes de détail natif.
+  for (const value of [...V5_REVALIDATION_CHECKS, ...NATIVE_FAILURE_DETAIL_CODES]) {
+    assert.ok(spec.includes(value), `valeur fermée absente du contrat : ${value}`);
+  }
+
+  // Champs de charge utile et métadonnées : couverture de présence, suffisante
+  // pour des champs dont la forme n'est pas un vocabulaire fermé.
+  for (const field of [
+    'reason',
+    'at',
+    'check',
+    'detail',
+    'error_code',
+    'native_detail',
+    'expert_slot',
+    'provider',
+    'session_id',
+    'expected_session_id',
+    'found_session_id',
+    'invocation_id',
+    'recorded_at',
+  ]) {
+    assert.ok(spec.includes(field), `champ absent du contrat : ${field}`);
+  }
+
+  // Le contrat déclare sa propre version, et les versions d'enregistrement
+  // qu'il couvre.
+  assert.match(spec, /CONTRAT SÉMANTIQUE\s+version 1/);
+  assert.match(spec, /VERSIONS D'ENREGISTREMENT\s+1 · 2/);
+
+  // VALID_ZERO est référencé à la doctrine, jamais redéfini ici.
+  assert.match(spec, /docs\/doctrine\.md.*17\.7|17\.7/);
+});
+
+// --------------------------------------------------------------------------
+// T14 — pointeur dans l'aide intégrée
+// --------------------------------------------------------------------------
+
+test('T14 · l’aide de la commande expose la référence canonique', async () => {
+  const out: string[] = [];
+  const err: string[] = [];
+  const io: CliIo = { out: (line) => out.push(line), err: (line) => err.push(line) };
+  await runCli(['help'], { io });
+
+  const usage = out.join('\n');
+  const block = usage.slice(usage.indexOf('ccr invocation-outcomes'));
+  assert.ok(
+    block.slice(0, 800).includes(INVOCATION_OUTCOME_CONTRACT_REFERENCE),
+    "le bloc d'aide doit pointer vers la référence canonique",
+  );
+});
+
+// --------------------------------------------------------------------------
+// T15 — un seul pointeur par sortie non vide
+// --------------------------------------------------------------------------
+
+test('T15 · la sortie non vide porte le pointeur exactement une fois', async () => {
+  const h = await harness();
+  try {
+    // Deux enregistrements : le pointeur reste au niveau de la commande.
+    await writeOutcomes(h, TWO_V2_RECORDS);
+    const result = await cli(h, ['invocation-outcomes', RUN_ID]);
+
+    assert.equal(result.code, 0);
+    const occurrences = result.out.split(INVOCATION_OUTCOME_CONTRACT_REFERENCE).length - 1;
+    assert.equal(occurrences, 1, 'un pointeur par commande, jamais par enregistrement');
+
+    // Les deux enregistrements sont bien rendus : le pointeur n'a pas remplacé
+    // une ligne de fait.
+    assert.match(result.out, /inv_000003/);
+    assert.match(result.out, /inv_000001/);
+  } finally {
+    await h.dispose();
+  }
+});
+
+// --------------------------------------------------------------------------
+// T16 — la sortie sans correspondance ne change pas
+// --------------------------------------------------------------------------
+
+test('T16 · zéro correspondance ne porte pas le pointeur, et ne change pas', async () => {
+  const h = await harness();
+  try {
+    await writeOutcomes(h, TWO_V2_RECORDS);
+    const filtered = await cli(h, ['invocation-outcomes', RUN_ID, '--invocation', 'inv_000009']);
+
+    assert.equal(filtered.code, 0);
+    assert.match(filtered.out, /Aucun fait dédié d'issue d'invocation enregistré pour cette requête\./);
+    assert.ok(
+      !filtered.out.includes(INVOCATION_OUTCOME_CONTRACT_REFERENCE),
+      'une requête sans correspondance ne porte aucun jeton à interpréter',
+    );
+    assert.doesNotMatch(filtered.out, /invocation-outcomes\.json/);
+
+    // Persistance rendant zéro fait : même absence de pointeur.
+    const empty = await harness();
+    try {
+      const none = await cli(empty, ['invocation-outcomes', RUN_ID]);
+      assert.equal(none.code, 0);
+      assert.match(none.out, /Aucun fait dédié d'issue d'invocation enregistré pour cette requête\./);
+      assert.ok(!none.out.includes(INVOCATION_OUTCOME_CONTRACT_REFERENCE));
+    } finally {
+      await empty.dispose();
+    }
+  } finally {
+    await h.dispose();
   }
 });

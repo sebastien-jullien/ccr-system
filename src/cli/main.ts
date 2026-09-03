@@ -125,6 +125,8 @@ Usage :
              Le filtre porte sur ce même ensemble. Un identifiant sans
              enregistrement rend zéro fait — une cardinalité, jamais un
              verdict : ni succès, ni échec, ni invocation inconnue.
+             Sémantique des genres et des motifs :
+             docs/specs/invocation-outcome.md
 
   ccr send   <author|challenger> (<message> | --file <fichier>)
              [--run <run_id>] [--runs-dir <répertoire>]
