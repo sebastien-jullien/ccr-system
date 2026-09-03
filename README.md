@@ -194,6 +194,8 @@ Une requête sans correspondance annonce qu'aucun fait dédié n'est enregistré
 
 Les genres d'issue, les motifs et la sémantique exacte de ce que la commande rend sont définis par [`docs/specs/invocation-outcome.md`](docs/specs/invocation-outcome.md).
 
+`--format json` rend la même projection sous forme machine : un seul document JSON sur la sortie standard, à n'analyser qu'après un code de sortie `0`. Sa structure est définie par [`docs/specs/invocation-outcome-machine.md`](docs/specs/invocation-outcome-machine.md) ; le sens des jetons qu'il transporte reste celui du contrat sémantique.
+
 Codes de sortie : `0` succès · `1` erreur CCR · `2` usage incorrect. `ccr` sans argument affiche l'aide complète.
 
 ---
@@ -353,6 +355,7 @@ Le contenu produit par un modèle est traité comme non fiable : il est analysé
 | [`docs/specs/evidence.md`](docs/specs/evidence.md) | contrat courant des matériaux et adductions |
 | [`docs/specs/reconciliation.md`](docs/specs/reconciliation.md) | contrat courant de la réconciliation |
 | [`docs/specs/invocation-outcome.md`](docs/specs/invocation-outcome.md) | contrat courant de la projection des issues d'invocation |
+| [`docs/specs/invocation-outcome-machine.md`](docs/specs/invocation-outcome-machine.md) | contrat courant de la représentation machine des issues d'invocation |
 | [`docs/design-foundations.md`](docs/design-foundations.md) | les principes de conception dont CCR part |
 | [`docs/design-history.md`](docs/design-history.md) | histoire intellectuelle rétrospective de CCR |
 | [`examples/cache-showcase/walkthrough/run-CCR-20260830-001.md`](examples/cache-showcase/walkthrough/run-CCR-20260830-001.md) | traversée réelle de bout en bout — compte rendu curé d'un run canonique sur la fixture de conception de cache |

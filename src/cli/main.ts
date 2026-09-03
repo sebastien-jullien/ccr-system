@@ -57,6 +57,7 @@ import {
 } from './reconciliation-dispatch.ts';
 import { formatNativeStatus } from './native-format.ts';
 import { formatInvocationOutcomeFacts } from './invocation-outcome-format.ts';
+import { MACHINE_FORMAT, serializeInvocationOutcomeFacts } from './invocation-outcome-machine.ts';
 import {
   isNativeRecoveryDomain,
   nativeRecoveryActionOf,
@@ -117,7 +118,7 @@ Usage :
   ccr status [<run_id>] [--runs-dir <répertoire>]
 
   ccr invocation-outcomes [<run_id>] [--invocation <invocation_id>]
-             [--runs-dir <répertoire>]
+             [--format json] [--runs-dir <répertoire>]
              Lecture seule des faits dédiés d'issue d'invocation, dans leur
              ordre d'ajout persisté. Une seule source est lue, et aucune autre
              autorité n'est interrogée : ni registre d'engagement, ni
@@ -127,6 +128,9 @@ Usage :
              verdict : ni succès, ni échec, ni invocation inconnue.
              Sémantique des genres et des motifs :
              docs/specs/invocation-outcome.md
+             --format json rend la même projection sous forme machine, en un
+             seul document JSON sur stdout. Structure :
+             docs/specs/invocation-outcome-machine.md
 
   ccr send   <author|challenger> (<message> | --file <fichier>)
              [--run <run_id>] [--runs-dir <répertoire>]
@@ -585,6 +589,13 @@ async function commandInvocationOutcomes(
   parsed: ParsedArgs,
   io: CliIo,
 ): Promise<number> {
+  // L'usage se juge avant tout travail : une valeur de format inconnue n'a pas
+  // à résoudre un run pour être refusée.
+  const format = parsed.flags.get('format');
+  if (format !== undefined && format !== MACHINE_FORMAT) {
+    throw new UsageError(`Format inconnu : ${format}. Seul « ${MACHINE_FORMAT} » est disponible.`);
+  }
+
   const target = await resolveRunTarget(deps.runsDir, parsed.positionals[0]);
   const invocationId = parsed.flags.get('invocation');
 
@@ -592,7 +603,12 @@ async function commandInvocationOutcomes(
     ...(invocationId === undefined ? {} : { invocationId }),
   });
 
-  io.out(formatInvocationOutcomeFacts(view));
+  // Représentation machine : un document, et rien d'autre sur stdout.
+  io.out(
+    format === MACHINE_FORMAT
+      ? serializeInvocationOutcomeFacts(view)
+      : formatInvocationOutcomeFacts(view),
+  );
   // Une requête exécutée est une réussite d'exécution CLI. La cardinalité du
   // résultat n'entre pas dans ce code : zéro fait n'est pas une erreur.
   return 0;
@@ -1539,7 +1555,7 @@ export async function runCli(
         return await commandStatus(deps, parsed, io);
       }
       case 'invocation-outcomes': {
-        const parsed = parseArgs(rest, [...commonFlags, 'invocation']);
+        const parsed = parseArgs(rest, [...commonFlags, 'invocation', 'format']);
         const deps = overrides.deps ?? (await runCommandDeps(parsed));
         return await commandInvocationOutcomes(deps, parsed, io);
       }
