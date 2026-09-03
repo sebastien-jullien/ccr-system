@@ -359,6 +359,7 @@ Le contenu produit par un modèle est traité comme non fiable : il est analysé
 | [`docs/specs/invocation-outcome.md`](docs/specs/invocation-outcome.md) | contrat courant de la projection des issues d'invocation |
 | [`docs/specs/invocation-outcome-machine.md`](docs/specs/invocation-outcome-machine.md) | contrat courant de la représentation machine des issues d'invocation |
 | [`docs/specs/run-inventory-machine.md`](docs/specs/run-inventory-machine.md) | contrat courant de l'inventaire machine des runs découvrables |
+| [`docs/specs/compatibility.md`](docs/specs/compatibility.md) | contrat courant de compatibilité des versions du paquet, à partir de v1.0.0 |
 | [`docs/design-foundations.md`](docs/design-foundations.md) | les principes de conception dont CCR part |
 | [`docs/design-history.md`](docs/design-history.md) | histoire intellectuelle rétrospective de CCR |
 | [`examples/cache-showcase/walkthrough/run-CCR-20260830-001.md`](examples/cache-showcase/walkthrough/run-CCR-20260830-001.md) | traversée réelle de bout en bout — compte rendu curé d'un run canonique sur la fixture de conception de cache |
@@ -366,6 +367,8 @@ Le contenu produit par un modèle est traité comme non fiable : il est analysé
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | comment contribuer |
 | [`SECURITY.md`](SECURITY.md) | signalement de vulnérabilité et frontières de confiance |
 | [`AGENTS.md`](AGENTS.md) · [`CLAUDE.md`](CLAUDE.md) | instructions de projet pour le travail assisté par IA |
+
+À partir de CCR v1.0.0, les versions publiques du paquet suivent le versionnement sémantique pour les contrats publics **explicitement supportés**, énumérés par [`docs/specs/compatibility.md`](docs/specs/compatibility.md). Cette version de paquet n'est pas la même chose que les axes de version propres aux contrats — version de contrat sémantique, de représentation machine, d'enregistrement source : ceux-ci gardent leur signification propre, et une nouvelle version de contrat n'entraîne pas mécaniquement une majeure de paquet.
 
 Le présent README est un point d'entrée : il explique et oriente. Pour toute
 question normative, `docs/doctrine.md` fait foi ; pour un contrat technique, la
