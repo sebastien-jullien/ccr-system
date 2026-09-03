@@ -283,6 +283,11 @@ test('M6 · chaque variante ne porte que ses champs applicables', async () => {
     const doc = JSON.parse((await cli(h, ['invocation-outcomes', RUN_ID, '--format', 'json'])).out);
     const [a, b, c, d] = doc.facts as { outcome: Record<string, unknown> }[];
 
+    // La présence est établie avant tout accès : déstructurer un tableau laisse
+    // chaque membre `T | undefined`, et le typage ignore la cardinalité que le
+    // jeu de faits produit. L'assertion la rend exécutable plutôt que supposée.
+    assert.ok(a && b && c && d, 'les quatre faits attendus sont présents');
+
     assert.deepEqual(Object.keys(a.outcome).sort(), ['at', 'kind', 'reason']);
     assert.deepEqual(Object.keys(b.outcome).sort(), ['check', 'detail', 'kind']);
     assert.deepEqual(Object.keys(c.outcome).sort(), ['error_code', 'kind']);
@@ -336,6 +341,8 @@ test('M7 · native_detail rend les membres de sa seule variante', async () => {
     const doc = JSON.parse((await cli(h, ['invocation-outcomes', RUN_ID, '--format', 'json'])).out);
     const [collision, mismatch, bare] = doc.facts as { outcome: Record<string, unknown> }[];
 
+    assert.ok(collision && mismatch && bare, 'les trois faits attendus sont présents');
+
     assert.deepEqual(
       Object.keys(collision.outcome['native_detail'] as object).sort(),
       ['code', 'expert_slot', 'provider', 'session_id'],
@@ -367,6 +374,8 @@ test('M8 · la version source est rendue par fait, et recorded_at est verbatim',
     });
     const doc = JSON.parse((await cli(h, ['invocation-outcomes', RUN_ID, '--format', 'json'])).out);
     const [v1, v2] = doc.facts as { source_record_version: number; recorded_at: string }[];
+
+    assert.ok(v1 && v2, 'les deux faits attendus sont présents');
 
     assert.equal(v1.source_record_version, 1);
     assert.equal(v2.source_record_version, 2);
