@@ -20,7 +20,7 @@ import type { MaterialRepresentationInput } from '../services/evidence-service.t
 import type { Orientation } from '../core/evidence.ts';
 import { loadEffectiveConfig } from '../config/config-store.ts';
 import { requirePinnedSnapshot, updateRunRuntimeConfig } from '../services/run-runtime-service.ts';
-import { resolveRunsDir, runPaths } from '../store/layout.ts';
+import { listRunIds, resolveRunsDir, runPaths } from '../store/layout.ts';
 import { readInvocationOutcomeFacts } from '../services/invocation-outcome-read.ts';
 import { loadRun } from '../store/state-store.ts';
 import type { AgentKind, AgentRole } from '../core/run.ts';
@@ -58,6 +58,7 @@ import {
 import { formatNativeStatus } from './native-format.ts';
 import { formatInvocationOutcomeFacts } from './invocation-outcome-format.ts';
 import { MACHINE_FORMAT, serializeInvocationOutcomeFacts } from './invocation-outcome-machine.ts';
+import { RUN_INVENTORY_FORMAT, serializeRunInventory } from './run-inventory-machine.ts';
 import {
   isNativeRecoveryDomain,
   nativeRecoveryActionOf,
@@ -113,7 +114,11 @@ Usage :
              modifiable ; 0 interdit tout appel. Sans l'option, aucune limite
              CCR ne s'applique.
 
-  ccr list   [--runs-dir <répertoire>]
+  ccr list   [--format json] [--runs-dir <répertoire>]
+             --format json rend l'inventaire machine des identités de run
+             découvrables — un seul document JSON sur stdout, sans état, sans
+             titre et sans diagnostic. Structure :
+             docs/specs/run-inventory-machine.md
 
   ccr status [<run_id>] [--runs-dir <répertoire>]
 
@@ -560,7 +565,28 @@ function parseProvider(value: string | undefined, name: string): ProviderKind {
  * historiques : ce sont eux qui déclaraient « (illisible) » un run natif
  * parfaitement sain, faute de savoir lire un manifest schema 2.
  */
-async function commandList(deps: RunServiceDeps, io: CliIo): Promise<number> {
+/**
+ * `ccr list` — énumération humaine, ou inventaire machine des identités.
+ *
+ * Les deux sorties descendent de la **même** autorité d'énumération ; la
+ * machine ne relit pas la présentation humaine. Le chemin machine s'arrête à
+ * `listRunIds` : il n'ouvre aucun document de run, si bien qu'une identité
+ * découvrable reste représentée même quand son manifest ou son state est
+ * illisible.
+ */
+async function commandList(deps: RunServiceDeps, parsed: ParsedArgs, io: CliIo): Promise<number> {
+  const format = parsed.flags.get('format');
+  if (format !== undefined && format !== RUN_INVENTORY_FORMAT) {
+    throw new UsageError(
+      `Format inconnu : ${format}. Seul « ${RUN_INVENTORY_FORMAT} » est disponible.`,
+    );
+  }
+
+  if (format === RUN_INVENTORY_FORMAT) {
+    io.out(serializeRunInventory(await listRunIds(deps.runsDir)));
+    return 0;
+  }
+
   io.out(formatList(await listAnyRuns(deps.runsDir)));
   return 0;
 }
@@ -1545,9 +1571,9 @@ export async function runCli(
         });
       }
       case 'list': {
-        const parsed = parseArgs(rest, commonFlags);
+        const parsed = parseArgs(rest, [...commonFlags, 'format']);
         const deps = overrides.deps ?? (await runCommandDeps(parsed));
-        return await commandList(deps, io);
+        return await commandList(deps, parsed, io);
       }
       case 'status': {
         const parsed = parseArgs(rest, commonFlags);
