@@ -158,6 +158,17 @@ ccr resume
 
 `ccr list --format json` rend l'inventaire machine des **identités de run découvrables** : un seul document JSON sur la sortie standard, à n'analyser qu'après un code de sortie `0`. Il expose des identités, jamais un état de run — ni statut, ni titre, ni génération, ni horodatage. Sa structure est définie par [`docs/specs/run-inventory-machine.md`](docs/specs/run-inventory-machine.md).
 
+**Surfaces machine de découverte et d'activité**
+
+```bash
+ccr run-descriptors --format json          # lecture ; n'écrit rien
+ccr run-activity <run_id> --format json    # lecture ; n'écrit rien
+```
+
+`ccr run-descriptors --format json` associe chaque identité de run découvrable au **titre canonique enregistré** de ce run. Le titre est rendu tel qu'il a été enregistré, et son unicité n'est pas garantie : deux runs homonymes restent deux descripteurs distincts. La projection est complète, ou elle n'a pas lieu. Sa structure et sa sémantique sont définies par [`docs/specs/run-descriptors-machine.md`](docs/specs/run-descriptors-machine.md).
+
+`ccr run-activity <run_id> --format json` rend l'**activité procédurale durable** du run — démarrage, passages de témoin natifs et envois humains — sous forme d'activités logiques ordonnées. Un champ `projection_status` discrimine trois issues, toutes en code de sortie `0` : l'histoire complète, une histoire qui ne peut pas être établie, ou une projection qui ne peut pas être produite de façon fiable. Ce n'est pas un transcript : aucun contenu, aucune position et aucun argument n'y figurent. Sa structure et sa sémantique sont définies par [`docs/specs/run-activity-machine.md`](docs/specs/run-activity-machine.md).
+
 **Dossier et débat**
 
 ```bash

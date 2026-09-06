@@ -833,6 +833,20 @@ const NATIVE_ENGINE_FILES = [
   // pure : elle n'ouvre aucun fichier, n'ecrit rien — pas meme un succes — et
   // ne touche pas `rounds/`.
   'services/invocation-outcome-read-model.ts',
+  // F1 : la lecture des descripteurs ouvre le manifest des DEUX generations
+  // pour en tirer le seul titre. Elle n'ecrit rien, n'ouvre aucun journal et
+  // ne touche pas `rounds/` ; sa dependance native se limite au lecteur
+  // bi-generation, seul capable de lire un manifest schema 2.
+  'services/run-descriptor-read.ts',
+  // F2 : la lecture d'activite etablit l'applicabilite depuis le manifest, puis
+  // ouvre l'etat canonique et le journal natif. Lecture seule, sans ecriture ni
+  // `rounds/` — c'est le meme moteur, pas un service historique.
+  'services/run-activity-read.ts',
+  // F2 : la normalisation « faits internes → activite publique » connait le
+  // modele natif — types d'evenements et identite d'ExpertSlot — parce que les
+  // roles `author` / `challenger` n'existent que la. Fonction pure : aucun
+  // fichier ouvert, rien d'ecrit, aucun `rounds/`.
+  'services/run-activity-projection.ts',
 ];
 
 test('28 · aucun service historique ne connaît les formats natifs, et personne n’écrit `rounds/`', async () => {

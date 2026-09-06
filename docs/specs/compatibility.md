@@ -166,6 +166,56 @@ APPARTENANCE À LA LIGNE DE BASE
   =  les seuls documents explicitement énumérés
 ```
 
+## 3.4 Contrats supportés ajoutés après la ligne de base de v1.0.0
+
+Cette section applique la règle du § 3.1 : une évolution compatible de la 1.x
+**peut** ajouter un contrat public supporté, sous la discipline de mineure du
+§ 6, sans modifier rétroactivement ce que la ligne de base de v1.0.0
+contenait.
+
+Elle énumère, et c'est sa seule fonction, les contrats publics supportés
+**ajoutés après** cette ligne de base.
+
+**Contrats de projection ajoutés après v1.0.0**
+
+```text
+docs/specs/run-descriptors-machine.md
+docs/specs/run-activity-machine.md
+```
+
+```text
+CONTRATS SUPPORTÉS EXISTANTS   inchangés
+NOUVEAUX CONTRATS SUPPORTÉS    découverte sémantique machine des runs
+                               activité durable machine d'un run
+CHANGEMENT DE COMPATIBILITÉ    additif
+APPARTENANCE À LA LIGNE DE BASE DE v1.0.0   inchangée
+```
+
+Ces deux documents deviennent des contrats publics supportés à compter de la
+version de paquet qui les publie. Ils ne rejoignent **pas** la ligne de base de
+v1.0.0, qui reste historiquement fixée à ses huit documents.
+
+```text
+LIGNE DE BASE DE v1.0.0   toujours exactement 8 documents
+```
+
+Aucun contrat public supporté existant n'est modifié, réinterprété ni retiré par
+cet ajout. En particulier, `docs/specs/run-inventory-machine.md`,
+`docs/specs/invocation-outcome.md` et
+`docs/specs/invocation-outcome-machine.md` conservent leur autorité, leur sens
+et leurs frontières inchangés.
+
+```text
+AJOUT D'UN CONTRAT SUPPORTÉ
+  ≠  remplacement d'un contrat supporté existant
+  ≠  réinterprétation d'un contrat supporté existant
+  ≠  modification rétroactive d'une ligne de base historique
+```
+
+Cette section n'énonce aucune règle de compatibilité nouvelle. Les règles de
+majeure, de mineure et de correctif restent celles des § 5, § 6 et § 7, et
+gouvernent ces contrats comme tous les autres.
+
 ---
 
 # 4. Garantie 1.x

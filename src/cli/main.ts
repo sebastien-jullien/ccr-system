@@ -59,6 +59,10 @@ import { formatNativeStatus } from './native-format.ts';
 import { formatInvocationOutcomeFacts } from './invocation-outcome-format.ts';
 import { MACHINE_FORMAT, serializeInvocationOutcomeFacts } from './invocation-outcome-machine.ts';
 import { RUN_INVENTORY_FORMAT, serializeRunInventory } from './run-inventory-machine.ts';
+import { readRunDescriptors } from '../services/run-descriptor-read.ts';
+import { RUN_DESCRIPTOR_FORMAT, serializeRunDescriptors } from './run-descriptor-machine.ts';
+import { readRunActivity } from '../services/run-activity-read.ts';
+import { RUN_ACTIVITY_FORMAT, serializeRunActivity } from './run-activity-machine.ts';
 import {
   isNativeRecoveryDomain,
   nativeRecoveryActionOf,
@@ -119,6 +123,31 @@ Usage :
              découvrables — un seul document JSON sur stdout, sans état, sans
              titre et sans diagnostic. Structure :
              docs/specs/run-inventory-machine.md
+
+  ccr run-descriptors --format json [--runs-dir <répertoire>]
+             Découverte sémantique machine : un descripteur par run
+             découvrable, portant exactement « run_id » et « title ». Ni état,
+             ni horodatage, ni workspace, ni génération, ni activité.
+             Le titre est celui enregistré à la création, rendu verbatim ; son
+             unicité n'est pas garantie, et deux runs homonymes restent deux
+             descripteurs distincts. L'ordre du tableau ne porte aucune
+             sémantique.
+             Complet, ou rien : si le titre d'un run découvrable ne peut pas
+             être établi avec autorité, aucun document n'est rendu et la
+             commande sort en 1.
+
+  ccr run-activity <run_id> --format json [--runs-dir <répertoire>]
+             Activité durable machine du run : démarrage, passages de témoin
+             natifs et envois humains, sous forme d'activités logiques
+             ordonnées par « sequence ».
+             « projection_status » discrimine trois issues, toutes en sortie 0 :
+             AVAILABLE rend l'histoire complète des trois familles ;
+             UNAVAILABLE dit que cette histoire ne peut pas être reconstruite
+             complètement — ce n'est pas une histoire vide ; PROJECTION_FAILURE
+             dit que F2 s'applique mais que la projection n'a pas pu être
+             produite de façon fiable. Ce n'est pas un échec de commande.
+             Aucun identifiant interne, aucun contenu, aucun fournisseur et
+             aucune session ne traversent cette surface.
 
   ccr status [<run_id>] [--runs-dir <répertoire>]
 
@@ -588,6 +617,71 @@ async function commandList(deps: RunServiceDeps, parsed: ParsedArgs, io: CliIo):
   }
 
   io.out(formatList(await listAnyRuns(deps.runsDir)));
+  return 0;
+}
+
+/**
+ * `ccr run-descriptors` — découverte sémantique machine (F1).
+ *
+ * Surface **exclusivement machine** : `--format json` est obligatoire, parce
+ * qu'aucune présentation humaine n'a été retenue. Une valeur inconnue, comme
+ * une absence, est une erreur d'usage — jamais un document dégradé.
+ *
+ * La CLI ne juge pas la vue : ou la lecture a établi tous les titres, ou elle
+ * lève, et le document n'existe pas.
+ */
+async function commandRunDescriptors(
+  deps: RunServiceDeps,
+  parsed: ParsedArgs,
+  io: CliIo,
+): Promise<number> {
+  const format = parsed.flags.get('format');
+  if (format !== RUN_DESCRIPTOR_FORMAT) {
+    throw new UsageError(
+      format === undefined
+        ? `L'option --format est obligatoire. Seul « ${RUN_DESCRIPTOR_FORMAT} » est disponible.`
+        : `Format inconnu : ${format}. Seul « ${RUN_DESCRIPTOR_FORMAT} » est disponible.`,
+    );
+  }
+
+  io.out(serializeRunDescriptors(await readRunDescriptors(deps.runsDir)));
+  return 0;
+}
+
+/**
+ * `ccr run-activity <run_id>` — activité durable machine (F2).
+ *
+ * Le `run_id` est **obligatoire** : cette surface ne résout pas de run
+ * implicite, et ne choisit donc jamais à la place de l'appelant.
+ *
+ * Les trois statuts de projection sont des succès de commande. En particulier :
+ *
+ * ```text
+ * PROJECTION_FAILURE + exit 0   ≠   exit 1
+ * ```
+ *
+ * Un échec de projection est un fait rendu ; un échec de commande ne rend rien.
+ */
+async function commandRunActivity(
+  deps: RunServiceDeps,
+  parsed: ParsedArgs,
+  io: CliIo,
+): Promise<number> {
+  const format = parsed.flags.get('format');
+  if (format !== RUN_ACTIVITY_FORMAT) {
+    throw new UsageError(
+      format === undefined
+        ? `L'option --format est obligatoire. Seul « ${RUN_ACTIVITY_FORMAT} » est disponible.`
+        : `Format inconnu : ${format}. Seul « ${RUN_ACTIVITY_FORMAT} » est disponible.`,
+    );
+  }
+
+  const runId = parsed.positionals[0];
+  if (runId === undefined || runId.length === 0) {
+    throw new UsageError('`ccr run-activity` attend un <run_id>.');
+  }
+
+  io.out(serializeRunActivity(await readRunActivity(runPaths(deps.runsDir, runId))));
   return 0;
 }
 
@@ -1574,6 +1668,16 @@ export async function runCli(
         const parsed = parseArgs(rest, [...commonFlags, 'format']);
         const deps = overrides.deps ?? (await runCommandDeps(parsed));
         return await commandList(deps, parsed, io);
+      }
+      case 'run-descriptors': {
+        const parsed = parseArgs(rest, [...commonFlags, 'format']);
+        const deps = overrides.deps ?? (await runCommandDeps(parsed));
+        return await commandRunDescriptors(deps, parsed, io);
+      }
+      case 'run-activity': {
+        const parsed = parseArgs(rest, [...commonFlags, 'format']);
+        const deps = overrides.deps ?? (await runCommandDeps(parsed));
+        return await commandRunActivity(deps, parsed, io);
       }
       case 'status': {
         const parsed = parseArgs(rest, commonFlags);
