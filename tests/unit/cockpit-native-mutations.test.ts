@@ -42,6 +42,7 @@ import type { MutationResponse } from '../../src/cockpit/mutations-http.ts';
 import { readNativeRunHttpView } from '../../src/cockpit/native-read-http.ts';
 import { readRunGeneration } from '../../src/store/run-directory.ts';
 import { DEFAULT_NATIVE_BINDINGS } from '../../src/services/native-start-service.ts';
+import { endNativeProduction } from '../../src/services/native-production-service.ts';
 import { runPaths } from '../../src/store/layout.ts';
 import { readPersistedManifest, readPersistedState } from '../../src/store/native-store.ts';
 import type { AgentAdapters, RunServiceDeps } from '../../src/services/run-service.ts';
@@ -741,4 +742,78 @@ test('26 · aucune route HANDOFF, et le transport n’atteint aucun terminal', a
   }
   const server = await readFile(new URL('../../src/cockpit/server.ts', import.meta.url), 'utf8');
   assert.equal(server.includes('handoff'), false, 'aucune route handoff');
+});
+
+// ==========================================================================
+// P3. Intention de production — refus contrôlé sur la route `STEP`
+// ==========================================================================
+
+/**
+ * P3-HTTP · un run déclaré sans pas de production refuse `STEP` en 422, sous son
+ * propre code, et ne consomme rien.
+ *
+ * Le défaut que ce test ferme est précis : un `CcrErrorCode` que la table
+ * publique du cockpit ne connaît pas tombe en `500` avec son code **remplacé**
+ * par `INTERNAL_ERROR`. Un refus procédural parfaitement déterministe se
+ * présenterait alors au navigateur comme une panne du cockpit.
+ *
+ * ```text
+ * 422 + NO_FURTHER_PRODUCTION_STEPS_INTENDED   refus contrôlé, cause lisible
+ * 500 + INTERNAL_ERROR                          panne prétendue
+ * ```
+ *
+ * Le refus est prononcé par `planNativeStep`, donc avant toute admission de
+ * créneau, tout appel fournisseur et toute écriture. Le test le vérifie plutôt
+ * que de le supposer.
+ */
+test('P3-HTTP · STEP sur un run sans pas prévu : 422, code propre, rien de consommé', async () => {
+  const dir = await makeTempDir('ccr-p3-cockpit-');
+  try {
+    const h = await harness(dir);
+    const runId = await startNative(h);
+    const callsAfterStart = h.calls();
+
+    // La déclaration humaine, par son seul propriétaire : le service P3.
+    await endNativeProduction({ runsDir: h.runsDir, now: () => new Date() }, runId, {
+      note: 'campagne close par décision humaine',
+      acknowledgeDowngrade: runId,
+    });
+
+    const journalBefore = await journalOf(h, runId);
+    const revision = await revisionOf(h, runId);
+
+    // Appel direct : `longMutation` masque le statut HTTP, qui est ici le fait.
+    const response = await executeLongMutation(
+      { runService: h.deps, store: h.store, manager: h.manager },
+      {
+        routeSegment: 'step',
+        runId,
+        generation: await readRunGeneration(h.runsDir, runId),
+        contentType: 'application/json',
+        idempotencyKey: 'idem-p3-000000000001',
+        body: json({ expected_revision: revision }),
+      },
+    );
+    const settled = await settle(h, response);
+
+    // 1 · refus contrôlé, et non panne : le statut dit la situation.
+    assert.equal(response.status, 422, json(response.body));
+    assert.notEqual(response.status, 500, 'jamais une panne prétendue');
+
+    // 2 · le code public est celui du refus, jamais une substitution.
+    const shaped = response.body as { error?: { code?: string } };
+    assert.equal(shaped.error?.code, 'NO_FURTHER_PRODUCTION_STEPS_INTENDED');
+    assert.notEqual(shaped.error?.code, 'INTERNAL_ERROR', 'aucune substitution de code');
+    assert.equal(settled.receipt.status, 'FAILED');
+    assert.equal(settled.receipt.error_code, 'NO_FURTHER_PRODUCTION_STEPS_INTENDED');
+
+    // 3 · aucun fournisseur approché, aucun créneau consommé.
+    assert.equal(h.calls(), callsAfterStart, 'aucun appel fournisseur');
+    assert.equal(h.manager.activeCount(), 0, 'aucun créneau consommé');
+
+    // 4 · la source transférable survit intacte : le journal n'a pas bougé.
+    assert.equal(await journalOf(h, runId), journalBefore, 'aucun fait écrit par le refus');
+  } finally {
+    await removeTempDir(dir);
+  }
 });

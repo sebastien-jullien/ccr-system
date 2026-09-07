@@ -62,7 +62,15 @@ import { RUN_INVENTORY_FORMAT, serializeRunInventory } from './run-inventory-mac
 import { readRunDescriptors } from '../services/run-descriptor-read.ts';
 import { RUN_DESCRIPTOR_FORMAT, serializeRunDescriptors } from './run-descriptor-machine.ts';
 import { readRunActivity } from '../services/run-activity-read.ts';
-import { RUN_ACTIVITY_FORMAT, serializeRunActivity } from './run-activity-machine.ts';
+import {
+  DEFAULT_RUN_ACTIVITY_MACHINE_REPRESENTATION_VERSION,
+  RUN_ACTIVITY_FORMAT,
+  RUN_ACTIVITY_MACHINE_REPRESENTATION_VERSIONS,
+  isRunActivityMachineRepresentationVersion,
+  serializeRunActivity,
+} from './run-activity-machine.ts';
+import type { RunActivityMachineRepresentationVersion } from './run-activity-machine.ts';
+import { endNativeProduction, reactivateNativeProduction } from '../services/native-production-service.ts';
 import {
   isNativeRecoveryDomain,
   nativeRecoveryActionOf,
@@ -136,7 +144,8 @@ Usage :
              être établi avec autorité, aucun document n'est rendu et la
              commande sort en 1.
 
-  ccr run-activity <run_id> --format json [--runs-dir <répertoire>]
+  ccr run-activity <run_id> --format json
+             [--machine-representation-version <entier>] [--runs-dir <répertoire>]
              Activité durable machine du run : démarrage, passages de témoin
              natifs et envois humains, sous forme d'activités logiques
              ordonnées par « sequence ».
@@ -148,6 +157,11 @@ Usage :
              produite de façon fiable. Ce n'est pas un échec de commande.
              Aucun identifiant interne, aucun contenu, aucun fournisseur et
              aucune session ne traversent cette surface.
+             « --machine-representation-version » sélectionne la représentation
+             machine, dimension distincte de « --format ». Absent, ou 1, rend la
+             représentation 1 à l'identique ; 2 y ajoute « production_intent »
+             sous AVAILABLE. Aucune montée implicite. Une valeur non supportée
+             sort en 2, sans document.
 
   ccr status [<run_id>] [--runs-dir <répertoire>]
 
@@ -185,6 +199,34 @@ Usage :
              Rend le run à l'automatisation ; il ne lance aucun agent et
              n'efface aucun diagnostic de reprise. Refusé lorsque des faits
              canoniques se contredisent : CCR ne choisit pas lequel est vrai.
+
+  ccr end-production --note <texte> [--acknowledge-downgrade <run_id>]
+             [--run <run_id>] [--runs-dir <répertoire>]
+             Enregistre qu'aucun pas de production natif supplémentaire n'est
+             présentement prévu pour ce run. Fait procédural, durable et
+             réversible : il ne ferme pas le run, ne le suspend pas, ne touche
+             ni au contrôle ni au quota, et préserve une source transférable en
+             attente.
+             Ne dit rien de la correction, de la complétude, d'un vainqueur,
+             d'un accord entre experts, d'une convergence ni d'un travail
+             épuisé.
+             « --note » est obligatoire et conservée verbatim ; elle est opaque
+             à CCR et ne prouve rien. Idempotent : demandé deux fois, le second
+             geste n'écrit aucun fait.
+             Le premier fait d'intention écrit dans un run rend son journal
+             illisible par une version antérieure de CCR ; cette frontière se
+             confirme par « --acknowledge-downgrade <run_id> », exigé une seule
+             fois et jamais ensuite.
+
+  ccr reactivate-production [--note <texte>]
+             [--run <run_id>] [--runs-dir <répertoire>]
+             Enregistre que des pas de production natifs sont de nouveau prévus.
+             Acte distinct d'une reprise de contrôle : il ne change ni l'état ni
+             le propriétaire du contrôle, et ne relance rien. Il n'efface pas le
+             fait de fin qui le précède.
+             Lever l'interdiction P3 ne rend aucun pas admissible par lui-même :
+             le quota, l'état, le contrôle et les autres gardes continuent de
+             s'appliquer.
 
   ccr handoff <author|challenger> [--run <run_id>] [--runs-dir <répertoire>]
              Ouvre la session native dans la CLI officielle. Ne reprend jamais
@@ -676,13 +718,47 @@ async function commandRunActivity(
     );
   }
 
+  const representation = parseRunActivityRepresentation(
+    parsed.flags.get('machine-representation-version'),
+  );
+
   const runId = parsed.positionals[0];
   if (runId === undefined || runId.length === 0) {
     throw new UsageError('`ccr run-activity` attend un <run_id>.');
   }
 
-  io.out(serializeRunActivity(await readRunActivity(runPaths(deps.runsDir, runId))));
+  io.out(serializeRunActivity(await readRunActivity(runPaths(deps.runsDir, runId)), representation));
   return 0;
+}
+
+/**
+ * Représentation machine demandée pour `ccr run-activity`.
+ *
+ * Dimension **distincte** de `--format` : l'une choisit la sérialisation,
+ * l'autre la forme du document. Le sélecteur absent rend la représentation
+ * historique, et jamais autre chose — une montée par défaut ferait changer de
+ * document un consommateur qui n'a rien demandé.
+ *
+ * Une valeur non supportée est refusée **avant** toute lecture, exactement
+ * comme un format inconnu : sortie 2, et aucune charge utile JSON.
+ */
+function parseRunActivityRepresentation(
+  value: string | undefined,
+): RunActivityMachineRepresentationVersion {
+  if (value === undefined) return DEFAULT_RUN_ACTIVITY_MACHINE_REPRESENTATION_VERSION;
+  const supported = RUN_ACTIVITY_MACHINE_REPRESENTATION_VERSIONS.join(' · ');
+  if (!/^[0-9]+$/.test(value)) {
+    throw new UsageError(
+      `--machine-representation-version attend un entier : ${value}. Disponibles : ${supported}.`,
+    );
+  }
+  const parsed = Number(value);
+  if (!isRunActivityMachineRepresentationVersion(parsed)) {
+    throw new UsageError(
+      `Représentation machine non supportée : ${value}. Disponibles : ${supported}.`,
+    );
+  }
+  return parsed;
 }
 
 async function commandStatus(deps: RunServiceDeps, parsed: ParsedArgs, io: CliIo): Promise<number> {
@@ -835,6 +911,131 @@ async function commandResume(deps: RunServiceDeps, parsed: ParsedArgs, io: CliIo
       : `Run ${result.runId} déjà exécutable par l'automatisation — état ${result.state.state} (inchangé)`,
   );
   io.out("Aucun agent n'a été appelé. Utilisez `ccr step` pour le prochain passage de témoin.");
+  return 0;
+}
+
+/**
+ * Commande dont la sémantique n'existe que dans le protocole natif.
+ *
+ * Distinct de `deferredNativeCommand`, qui refuse une commande **historique**
+ * sur un run natif : ici le sens du geste est natif, et un run historique n'a
+ * ni ExpertSlot, ni autorité de contrôle native à qui l'attribuer. Rien n'est
+ * converti, et aucun autre run n'est touché.
+ */
+function nativeOnlyCommand(command: string, runId: string): CcrError {
+  return new CcrError(
+    'COMMAND_UNSUPPORTED_FOR_GENERATION',
+    `\`ccr ${command}\` appartient au protocole natif. Le run visé est ${runId} ` +
+      "(LEGACY_V2_EXECUTION) : rien n'y a été converti, et aucun autre run n'a été touché.",
+    { details: { command, runId, execution_mode: 'LEGACY_V2_EXECUTION' } },
+  );
+}
+
+/**
+ * Acquittement de descente, confronté à l'identité **résolue** du run.
+ *
+ * La règle vaut à tout instant — avant la frontière, après elle, et sur une
+ * reprise idempotente. Une valeur qui ne désigne pas ce run n'est jamais
+ * ignorée au motif que la frontière serait déjà franchie : elle acquitterait
+ * autre chose que ce qu'on est en train de faire.
+ *
+ * Porter le `run_id` plutôt qu'un mot fixe est délibéré. C'est l'idiome de
+ * `clear-stale-lock --lock-id`, et il a la même vertu : un acquittement
+ * spécifique ne s'ajoute pas machinalement à une boucle sur plusieurs runs.
+ */
+function parseDowngradeAcknowledgement(
+  parsed: ParsedArgs,
+  runId: string,
+): string | undefined {
+  const value = parsed.flags.get('acknowledge-downgrade');
+  if (value === undefined) return undefined;
+  if (value !== runId) {
+    throw new UsageError(
+      `--acknowledge-downgrade désigne « ${value} », et le run visé est ${runId}. ` +
+        "L'acquittement porte l'identité exacte du run dont la frontière est franchie ; " +
+        "aucun fait n'a été écrit.",
+    );
+  }
+  return value;
+}
+
+/**
+ * `ccr end-production` — aucun pas de production natif n'est présentement prévu.
+ *
+ * La CLI est une surface : elle vérifie l'usage, résout le run, remet la
+ * requête au service et met en forme ce qu'il rend. Elle n'ouvre aucun journal
+ * et ne dérive aucune intention.
+ */
+async function commandEndProduction(
+  deps: RunServiceDeps,
+  parsed: ParsedArgs,
+  io: CliIo,
+): Promise<number> {
+  // L'usage se juge avant tout travail : une note manquante n'a pas à résoudre
+  // un run pour être refusée.
+  const note = requireFlag(parsed, 'note');
+  const target = await resolveRunTarget(deps.runsDir, parsed.flags.get('run'));
+  if (target.generation !== 'NATIVE_V21_EXECUTION') {
+    throw nativeOnlyCommand('end-production', target.runId);
+  }
+  const acknowledgeDowngrade = parseDowngradeAcknowledgement(parsed, target.runId);
+
+  const result = await endNativeProduction(deps, target.runId, {
+    note,
+    ...(acknowledgeDowngrade === undefined ? {} : { acknowledgeDowngrade }),
+  });
+
+  io.out(
+    result.changed
+      ? `Run ${result.runId} — aucun pas de production natif n'est présentement prévu.`
+      : `Run ${result.runId} — aucun pas de production natif n'était déjà prévu (inchangé).`,
+  );
+  io.out(`production_intent : ${result.intent}`);
+  io.out('');
+  io.out(
+    "Ce fait est procédural. Il ne dit rien de la correction, de la complétude, d'un vainqueur, " +
+      "d'un accord entre experts, d'une convergence, ni d'un travail épuisé.",
+  );
+  io.out(
+    "Le run n'est ni fermé ni suspendu, son contrôle et son quota sont inchangés, et une source " +
+      'transférable en attente est préservée. `ccr reactivate-production` lève cette déclaration.',
+  );
+  return 0;
+}
+
+/**
+ * `ccr reactivate-production` — des pas de production natifs sont de nouveau
+ * prévus.
+ *
+ * Acte distinct de `ccr resume` : celui-ci rend le run à l'automatisation,
+ * celui-là ne touche ni à l'état ni au contrôle.
+ */
+async function commandReactivateProduction(
+  deps: RunServiceDeps,
+  parsed: ParsedArgs,
+  io: CliIo,
+): Promise<number> {
+  const note = parsed.flags.get('note');
+  const target = await resolveRunTarget(deps.runsDir, parsed.flags.get('run'));
+  if (target.generation !== 'NATIVE_V21_EXECUTION') {
+    throw nativeOnlyCommand('reactivate-production', target.runId);
+  }
+  const result = await reactivateNativeProduction(deps, target.runId, {
+    ...(note === undefined ? {} : { note }),
+  });
+
+  io.out(
+    result.changed
+      ? `Run ${result.runId} — des pas de production natifs sont de nouveau prévus.`
+      : `Run ${result.runId} — des pas de production natifs étaient déjà prévus (inchangé).`,
+  );
+  io.out(`production_intent : ${result.intent}`);
+  io.out('');
+  io.out(
+    "Ni l'état ni le contrôle du run n'ont changé, et aucun agent n'a été appelé. Lever cette " +
+      "interdiction ne rend aucun pas admissible par elle-même : le quota, l'état, le contrôle et " +
+      'les autres gardes continuent de décider pour leur compte.',
+  );
   return 0;
 }
 
@@ -1675,7 +1876,7 @@ export async function runCli(
         return await commandRunDescriptors(deps, parsed, io);
       }
       case 'run-activity': {
-        const parsed = parseArgs(rest, [...commonFlags, 'format']);
+        const parsed = parseArgs(rest, [...commonFlags, 'format', 'machine-representation-version']);
         const deps = overrides.deps ?? (await runCommandDeps(parsed));
         return await commandRunActivity(deps, parsed, io);
       }
@@ -1708,6 +1909,20 @@ export async function runCli(
         const parsed = parseArgs(rest, [...commonFlags, 'run']);
         const deps = overrides.deps ?? (await runCommandDeps(parsed));
         return await commandResume(deps, parsed, io);
+      }
+      case 'end-production': {
+        const parsed = parseArgs(rest, [...commonFlags, 'run', 'note', 'acknowledge-downgrade']);
+        const deps = overrides.deps ?? (await runCommandDeps(parsed));
+        return await commandEndProduction(deps, parsed, io);
+      }
+      case 'reactivate-production': {
+        // Sans `acknowledge-downgrade` : une réactivation ne peut pas être le
+        // premier fait P3 d'un run, donc elle ne franchit jamais la frontière
+        // de compatibilité. Accepter le drapeau ici promettrait un acquittement
+        // qui n'a rien à acquitter.
+        const parsed = parseArgs(rest, [...commonFlags, 'run', 'note']);
+        const deps = overrides.deps ?? (await runCommandDeps(parsed));
+        return await commandReactivateProduction(deps, parsed, io);
       }
       case 'handoff': {
         const parsed = parseArgs(rest, [...commonFlags, 'run']);
@@ -1795,6 +2010,12 @@ export async function runCli(
     io.err(formatError(error));
     if (isCcrError(error) && error.code === 'INTERACTIVE_TTY_REQUIRED') {
       // Contexte d'exécution inadapté, non erreur de traitement (§22.1).
+      return 2;
+    }
+    if (isCcrError(error) && error.code === 'DOWNGRADE_ACKNOWLEDGEMENT_REQUIRED') {
+      // Invocation à reformer, non erreur de traitement : le run est intact et
+      // rien n'a été écrit. Le remède tient dans la ligne de commande, ce que
+      // la sortie 2 signale — même classification que `INTERACTIVE_TTY_REQUIRED`.
       return 2;
     }
     if (isCcrError(error) && error.code === 'RECOVERY_REQUIRED') {

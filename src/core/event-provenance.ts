@@ -25,6 +25,7 @@ import {
   HANDOFF_RESOLUTION_EVENT_TYPES,
   HANDOFF_RESOLUTION_REASONS,
   NATIVE_EVENT_ACTORS,
+  PRODUCTION_INTENT_EVENT_TYPES,
   SEND_RESOLUTION_EVENT_TYPES,
   SEND_RESOLUTION_REASONS,
   TRANSFER_ABORTED_EVENT_TYPES,
@@ -59,6 +60,7 @@ export type EventProvenanceShape =
   | 'TRANSFER_ABORTED'
   | 'SEND_RESOLUTION'
   | 'HANDOFF_RESOLUTION'
+  | 'PRODUCTION_INTENT'
   | 'GENERATION_NEUTRAL';
 
 /** Tous les champs de provenance natifs, quelle que soit la forme. */
@@ -78,6 +80,9 @@ const ALLOWED_SLOT_FIELDS: Readonly<Record<EventProvenanceShape, readonly string
   TRANSFER_ABORTED: ['source_slot_id', 'target_slot_id'],
   SEND_RESOLUTION: ['target_expert_slot_id'],
   HANDOFF_RESOLUTION: ['target_expert_slot_id'],
+  // Un fait d'intention de production porte sur le run entier : aucun slot n'y
+  // a de sens, et en accepter un ferait croire qu'un expert l'a déclaré.
+  PRODUCTION_INTENT: [],
   GENERATION_NEUTRAL: [],
 };
 
@@ -89,6 +94,7 @@ const NATIVE_EVENT_TYPES: readonly string[] = [
   ...TRANSFER_ABORTED_EVENT_TYPES,
   ...SEND_RESOLUTION_EVENT_TYPES,
   ...HANDOFF_RESOLUTION_EVENT_TYPES,
+  ...PRODUCTION_INTENT_EVENT_TYPES,
 ];
 
 /** Types natifs absents du cœur : un journal historique ne les accepte jamais. */
@@ -98,6 +104,7 @@ const NATIVE_ONLY_EVENT_TYPES: readonly string[] = [
   ...TRANSFER_ABORTED_EVENT_TYPES,
   ...SEND_RESOLUTION_EVENT_TYPES,
   ...HANDOFF_RESOLUTION_EVENT_TYPES,
+  ...PRODUCTION_INTENT_EVENT_TYPES,
 ];
 
 export function provenanceShapeOf(type: NativeEventType): EventProvenanceShape {
@@ -109,6 +116,7 @@ export function provenanceShapeOf(type: NativeEventType): EventProvenanceShape {
   if ((TRANSFER_ABORTED_EVENT_TYPES as readonly string[]).includes(type)) return 'TRANSFER_ABORTED';
   if ((SEND_RESOLUTION_EVENT_TYPES as readonly string[]).includes(type)) return 'SEND_RESOLUTION';
   if ((HANDOFF_RESOLUTION_EVENT_TYPES as readonly string[]).includes(type)) return 'HANDOFF_RESOLUTION';
+  if ((PRODUCTION_INTENT_EVENT_TYPES as readonly string[]).includes(type)) return 'PRODUCTION_INTENT';
   return 'GENERATION_NEUTRAL';
 }
 
@@ -383,6 +391,43 @@ export function validateNativeEventShape(value: unknown, lineNumber: number | nu
         throw journalInvalid(
           `${where} : « ${type} » exige le motif « ${expectedReason} », pas « ${String(record['reason'])} ».`,
           { field: 'reason', type },
+        );
+      }
+      break;
+    }
+    case 'PRODUCTION_INTENT': {
+      // Aucune identité de slot : déjà refusée par `ALLOWED_SLOT_FIELDS`.
+      //
+      // Aucune session non plus, et pour la même raison que sur une clôture :
+      // le fait ne prétend pas qu'une continuité native a été atteinte, ni
+      // qu'elle est inchangée. Il ne la concerne simplement pas.
+      if ('session_id' in record) {
+        throw journalInvalid(
+          `${where} : « session_id » n'a pas de sens sur un fait d'intention de production — ` +
+            "il porte sur le run, jamais sur une continuité native.",
+          { field: 'session_id', type, shape },
+        );
+      }
+      // Aucune opération close, engagée ou consommée n'est nommée. P3 ne clôt
+      // ni un envoi, ni une ouverture, ni un transfert : lui laisser désigner
+      // l'un d'eux ferait croire qu'il en connaît l'issue.
+      for (const field of ['prompt_event_id', 'started_event_id', 'source_event_id', 'response_event_id']) {
+        if (field in record) {
+          throw journalInvalid(
+            `${where} : « ${field} » n'a pas de sens sur « ${type} » — une intention de production ` +
+              "ne clôt aucune opération et n'en consomme aucune.",
+            { field, type, shape },
+          );
+        }
+      }
+      // Aucun motif : les trois familles sans issue en portent un parce
+      // qu'elles décrivent un échec. Une intention déclarée n'est pas un échec,
+      // et n'a pas de raison fermée à choisir dans un vocabulaire.
+      if ('reason' in record) {
+        throw journalInvalid(
+          `${where} : « reason » n'a pas de sens sur « ${type} » — une intention déclarée ` +
+            "n'est pas une issue négative.",
+          { field: 'reason', type, shape },
         );
       }
       break;

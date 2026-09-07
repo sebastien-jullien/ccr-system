@@ -74,6 +74,46 @@ export type CcrErrorCode =
   /** Le handoff interactif n'est pas autorisé dans l'état actuel. */
   | 'HANDOFF_NOT_ALLOWED'
   /**
+   * L'autorité de contrôle humaine a déclaré qu'aucun pas de production natif
+   * supplémentaire n'est présentement prévu pour ce run (P3).
+   *
+   * Aucun code existant ne convenait, et aucun n'a été détourné :
+   *
+   * ```text
+   * AUTOMATION_NOT_IN_CONTROL   affirmerait un propriétaire de contrôle
+   *                             que P3 ne change pas
+   * ILLEGAL_STATE_TRANSITION    affirmerait un refus de la machine d'état,
+   *                             que P3 ne sollicite pas
+   * RECOVERY_REQUIRED           orienterait vers `ccr recover`, qui n'a
+   *                             rien à proposer ici
+   * NO_TRANSFERABLE_SOURCE      affirmerait une absence de source, alors
+   *                             qu'une source en attente est préservée
+   * ```
+   *
+   * Le refus est constaté **avant** tout appel fournisseur, avant le quota et
+   * avant toute création d'invocation. Il ne consomme aucune source, n'écrit
+   * aucun fait durable, et ne modifie ni l'état ni le contrôle du run.
+   *
+   * Il n'affirme rien du travail : ni correction, ni complétude, ni accord, ni
+   * convergence, ni épuisement. Il rapporte une déclaration humaine, et rien
+   * d'autre. Une réactivation explicite la lève.
+   */
+  | 'NO_FURTHER_PRODUCTION_STEPS_INTENDED'
+  /**
+   * Un premier fait P3 serait écrit dans ce run, et la frontière de
+   * compatibilité descendante n'a pas été acquittée (P3).
+   *
+   * Le premier fait P3 durable rend le journal illisible par un binaire CCR
+   * antérieur : celui-ci refuse un type d'événement qu'il ne connaît pas, et
+   * l'échec est franc plutôt que silencieux. L'acquittement est donc exigé
+   * **une fois**, à cette frontière précise, et jamais ensuite.
+   *
+   * Ce n'est pas une erreur de traitement : le run est intact, et la commande
+   * est reformable telle quelle. Le remède est d'ajouter l'acquittement à la
+   * ligne de commande, ce que la sortie 2 signale.
+   */
+  | 'DOWNGRADE_ACKNOWLEDGEMENT_REQUIRED'
+  /**
    * Des faits canoniques se contredisent : le run ne peut pas gagner en
    * autonomie.
    *

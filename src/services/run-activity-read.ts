@@ -38,6 +38,8 @@
  */
 
 import { isCcrError } from '../core/errors.ts';
+import { deriveProductionIntent } from '../core/production-intent.ts';
+import type { ProductionIntent } from '../core/production-intent.ts';
 import type { RunPaths } from '../store/layout.ts';
 import { openNativeEventStore } from '../store/native-event-store.ts';
 import { readPersistedManifest, readPersistedState } from '../store/native-store.ts';
@@ -61,6 +63,21 @@ export type RunActivityView =
       readonly run_id: string;
       readonly projection_status: 'AVAILABLE';
       readonly activities: readonly RunActivity[];
+      /**
+       * Intention de production courante (P3), dérivée du journal durable.
+       *
+       * Présente dans la **seule** variante disponible, pour la même raison
+       * qu'`activities` : sous `UNAVAILABLE` et `PROJECTION_FAILURE`, CCR
+       * déclare qu'il ne peut pas reconstruire l'histoire requise. En tirer une
+       * intention reviendrait à affirmer depuis des faits partiels.
+       *
+       * ```text
+       * absence   ≠ STEPS_INTENDED
+       * absence   ≠ NO_STEPS_INTENDED
+       * UNKNOWN   ≠ ZERO
+       * ```
+       */
+      readonly production_intent: ProductionIntent;
     }
   | {
       readonly run_id: string;
@@ -119,5 +136,9 @@ export async function readRunActivity(paths: RunPaths): Promise<RunActivityView>
     run_id: runId,
     projection_status: 'AVAILABLE',
     activities: projection.activities,
+    // Dérivée des mêmes faits durables, dans la même lecture : deux lectures
+    // distinctes donneraient deux visions temporelles d'un run qui n'existe
+    // qu'une fois.
+    production_intent: deriveProductionIntent(events),
   };
 }

@@ -423,6 +423,9 @@ test('A3a · REPRÉSENTATION — AVAILABLE + activities:[] reste une forme machi
       run_id: RUN,
       projection_status: 'AVAILABLE',
       activities: [],
+      // Champ de la lecture depuis P3. La représentation 1 ne le rend pas :
+      // c'est précisément ce que ce test vérifie en énumérant les clés.
+      production_intent: 'STEPS_INTENDED',
     }),
   ) as ActivityDoc;
 

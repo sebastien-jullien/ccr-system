@@ -703,6 +703,11 @@ const NATIVE_ENGINE_FILES = [
   // V2.1-IMP-16 : le controle humain natif ecrit `state.json` et le journal,
   // mais jamais `rounds/` — suspendre ou reprendre n'est pas un transfert.
   'services/native-control-service.ts',
+  // P3 : l'intention de production ecrit un fait durable dans le journal natif,
+  // et rien d'autre — ni `state.json`, ni `rounds/`. Le vocabulaire d'evenement
+  // qu'elle emploie n'existe que dans la generation native, ce qui la place
+  // dans le moteur natif et nulle part ailleurs.
+  'services/native-production-service.ts',
   // V2.1-IMP-17A : la couture de mutation valide la generation avant toute
   // precondition. Elle ne connait ni HTTP ni `rounds/`.
   'services/native-mutation-boundary.ts',

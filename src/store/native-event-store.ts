@@ -85,6 +85,10 @@ function slotsConcernedBy(event: NativeCcrEvent): readonly { slot: ExpertSlotId;
         { slot: e.target_slot_id, session: null },
       ];
     }
+    // Ni l'une ni l'autre ne concerne un slot : la première parce qu'elle
+    // porte sur le run entier, la seconde parce qu'elle ne porte aucune
+    // identité du tout.
+    case 'PRODUCTION_INTENT':
     case 'GENERATION_NEUTRAL':
       return [];
   }

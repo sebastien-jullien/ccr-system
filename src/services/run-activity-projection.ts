@@ -230,6 +230,19 @@ const OUT_OF_FAMILY_EVENT_TYPES: ReadonlySet<string> = new Set([
   'run_completed',
   'decision_recorded',
   'runtime_config_changed',
+  // Intention de production (P3). Hors des trois familles, et délibérément :
+  // ce n'est pas une activité durablement engagée, c'est une déclaration
+  // portant sur le run. Sa projection publique est un champ de niveau run,
+  // jamais un `activity_kind` — le vocabulaire v1 des genres reste fermé.
+  //
+  // ```text
+  // ACTIVITÉ   ≠   FAIT DE CYCLE DE VIE OU D'INTENTION
+  // ```
+  //
+  // Leur présence n'entame donc pas la complétude d'une projection
+  // `AVAILABLE`, exactement comme `pause` ou `resume`.
+  'production_ended',
+  'production_reactivated',
 ]);
 
 // --------------------------------------------------------------------------

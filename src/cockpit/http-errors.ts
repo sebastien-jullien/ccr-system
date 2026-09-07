@@ -229,6 +229,21 @@ const PUBLIC_ERRORS: Partial<Record<CcrErrorCode, PublicMapping>> = {
     status: 422,
     message: 'La dernière position de cet expert précède une interaction native externe.',
   },
+  /**
+   * Refus P3 : l'autorité de contrôle humaine a déclaré qu'aucun pas de
+   * production natif supplémentaire n'est présentement prévu.
+   *
+   * Publié parce que la route `STEP` peut réellement le produire. Non publié, il
+   * tomberait en `500` avec son code remplacé — précisément le défaut que
+   * `IMP-17B` ferme.
+   *
+   * Le message reste procédural : il rapporte une déclaration humaine, et
+   * n'affirme ni correction, ni complétude, ni accord, ni convergence.
+   */
+  NO_FURTHER_PRODUCTION_STEPS_INTENDED: {
+    status: 422,
+    message: 'Aucun pas de production natif supplémentaire n’est présentement prévu pour ce run.',
+  },
   HANDOFF_NOT_ALLOWED: {
     status: 422,
     message: 'Le handoff exige un run suspendu, sous contrôle humain.',

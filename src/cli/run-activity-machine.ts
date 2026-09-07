@@ -41,6 +41,21 @@
  * `PROJECTION_FAILURE`, la clé est **omise** : une histoire absente n'est pas
  * une histoire vide.
  *
+ * ## Deux représentations, une seule sémantique de champ
+ *
+ * ```text
+ * représentation 1   jeu de champs de v1.1.0, à l'identique
+ * représentation 2   + production_intent, sous AVAILABLE uniquement
+ * ```
+ *
+ * `production_intent` est un champ de **niveau run**, jamais un genre
+ * d'activité : le vocabulaire fermé d'`activity_kind` n'est pas élargi, parce
+ * qu'une déclaration d'intention n'est pas une activité durablement engagée.
+ *
+ * ```text
+ * ACTIVITÉ   ≠   FAIT DE CYCLE DE VIE OU D'INTENTION
+ * ```
+ *
  * ## Ordre
  *
  * Le tableau est sérialisé par `sequence` croissante. L'autorité d'ordre reste
@@ -50,11 +65,49 @@
 import type { RunActivity } from '../services/run-activity-projection.ts';
 import type { RunActivityView } from '../services/run-activity-read.ts';
 
-/** Version du contrat sémantique dont ce document rend les jetons. */
+/** Version du contrat sémantique dont la représentation 1 rend les jetons. */
 export const DURABLE_RUN_ACTIVITY_CONTRACT_VERSION = 1;
 
-/** Version de la représentation machine. */
+/** Version de la représentation machine historique. */
 export const DURABLE_RUN_ACTIVITY_MACHINE_REPRESENTATION_VERSION = 1;
+
+/**
+ * Représentations machine que ce producteur sait rendre.
+ *
+ * Deux axes **distincts**, et le sélecteur ne touche qu'au second :
+ *
+ * ```text
+ * --format                          format de sérialisation   (json)
+ * --machine-representation-version   représentation machine    (1, 2)
+ * ```
+ *
+ * La représentation 1 reste rendue **à l'identique**, sélecteur absent comme
+ * sélecteur explicite. Aucune montée implicite : un consommateur qui n'a rien
+ * demandé ne reçoit jamais un document d'une autre forme que celle qu'il lisait.
+ */
+export const RUN_ACTIVITY_MACHINE_REPRESENTATION_VERSIONS = [1, 2] as const;
+
+export type RunActivityMachineRepresentationVersion =
+  (typeof RUN_ACTIVITY_MACHINE_REPRESENTATION_VERSIONS)[number];
+
+/** Représentation rendue lorsque l'appelant n'en demande aucune. */
+export const DEFAULT_RUN_ACTIVITY_MACHINE_REPRESENTATION_VERSION: RunActivityMachineRepresentationVersion = 1;
+
+/**
+ * Version du contrat sémantique portée par chaque représentation.
+ *
+ * Table explicite plutôt qu'égalité présumée : les deux axes sont indépendants,
+ * et rien ne garantit qu'ils avanceront toujours ensemble.
+ */
+const CONTRACT_VERSION_BY_REPRESENTATION: Readonly<
+  Record<RunActivityMachineRepresentationVersion, number>
+> = { 1: 1, 2: 2 };
+
+export function isRunActivityMachineRepresentationVersion(
+  value: number,
+): value is RunActivityMachineRepresentationVersion {
+  return (RUN_ACTIVITY_MACHINE_REPRESENTATION_VERSIONS as readonly number[]).includes(value);
+}
 
 /** Seule valeur admise par `--format` sur `ccr run-activity`. */
 export const RUN_ACTIVITY_FORMAT = 'json';
@@ -105,20 +158,37 @@ function machineActivity(activity: RunActivity): Record<string, unknown> {
  * F2 requise a été reconstruite complètement, et elle ne contient aucune
  * activité des trois familles. Ce n'est ni une indisponibilité, ni un échec.
  */
-export function serializeRunActivity(view: RunActivityView): string {
+export function serializeRunActivity(
+  view: RunActivityView,
+  representation: RunActivityMachineRepresentationVersion = DEFAULT_RUN_ACTIVITY_MACHINE_REPRESENTATION_VERSION,
+): string {
   const head = {
-    durable_run_activity_contract_version: DURABLE_RUN_ACTIVITY_CONTRACT_VERSION,
-    durable_run_activity_machine_representation_version:
-      DURABLE_RUN_ACTIVITY_MACHINE_REPRESENTATION_VERSION,
+    durable_run_activity_contract_version: CONTRACT_VERSION_BY_REPRESENTATION[representation],
+    durable_run_activity_machine_representation_version: representation,
     run_id: view.run_id,
     projection_status: view.projection_status,
   };
 
   if (view.projection_status !== 'AVAILABLE') {
-    // Aucune clé `activities`. L'omission est le fait.
+    // Aucune clé `activities`, et aucune clé `production_intent`. L'omission
+    // est le fait : une histoire que CCR déclare irreconstituable ne porte
+    // aucune intention dérivée.
     return JSON.stringify(head, null, 2);
   }
 
   const ordered = [...view.activities].sort((a, b) => a.sequence - b.sequence);
-  return JSON.stringify({ ...head, activities: ordered.map(machineActivity) }, null, 2);
+  const activities = ordered.map(machineActivity);
+
+  // La représentation 1 reste **exactement** ce qu'elle était. Elle n'est
+  // jamais enrichie en silence : un champ apparu dans la lecture ne franchit
+  // pas la frontière publique par diffusion.
+  if (representation === 1) {
+    return JSON.stringify({ ...head, activities }, null, 2);
+  }
+
+  return JSON.stringify(
+    { ...head, production_intent: view.production_intent, activities },
+    null,
+    2,
+  );
 }

@@ -3,8 +3,9 @@
 ```text
 STATUT                              contrat courant
 PORTÉE                              activité procédurale machine publique · lecture seule
-CONTRAT SÉMANTIQUE SUPPORTÉ         1
-CONTRAT DE REPRÉSENTATION MACHINE   1
+CONTRATS SÉMANTIQUES SUPPORTÉS      1 · 2
+CONTRATS DE REPRÉSENTATION MACHINE  1 · 2
+REPRÉSENTATION PAR DÉFAUT           1
 ```
 
 Ce document définit la structure et la portée du document machine produit par
@@ -26,7 +27,9 @@ Et rien d'autre.
 ## 1.2 Surface publique
 
 ```text
-ccr run-activity <run_id> --format json [--runs-dir <répertoire>]
+ccr run-activity <run_id> --format json
+                 [--machine-representation-version <entier>]
+                 [--runs-dir <répertoire>]
 ```
 
 `<run_id>` est **obligatoire**. Cette surface ne résout aucun run implicite et
@@ -34,6 +37,36 @@ ne choisit jamais de run à la place de l'appelant.
 
 `--format json` est **obligatoire**. Ce contrat ne définit aucune présentation
 humaine de cette commande, et aucune n'est promise.
+
+`--machine-representation-version` est **facultative**, et sélectionne la
+représentation machine. C'est une dimension **distincte** de `--format` :
+
+```text
+--format                           format de sérialisation
+--machine-representation-version   représentation machine
+```
+
+```text
+sélecteur absent   →  représentation 1
+sélecteur = 1      →  représentation 1, à l'identique
+sélecteur = 2      →  représentation 2
+```
+
+```text
+AUCUNE MONTÉE IMPLICITE
+```
+
+Un consommateur qui n'a rien demandé reçoit exactement le document qu'il lisait.
+
+Valeur non supportée :
+
+```text
+code de sortie 2
+aucun document JSON sur stdout
+```
+
+Même traitement qu'une valeur de `--format` inconnue : l'usage se juge avant
+toute lecture.
 
 ## 1.3 Procédural, jamais substantiel
 
@@ -122,6 +155,9 @@ Une fin de ligne finale unique est sans sémantique.
 
 # 3. Document
 
+Les deux représentations partagent le même document de base. La représentation 2
+n'en retire rien, n'en réaffecte rien, et n'y ajoute qu'un seul champ.
+
 ## 3.1 `AVAILABLE`
 
 ```json
@@ -167,6 +203,90 @@ eux seuls :
 ```text
 JEU DE CHAMPS DU PRODUCTEUR v1   FERMÉ
 ```
+
+## 3.3 Représentation 2
+
+```json
+{
+  "durable_run_activity_contract_version": 2,
+  "durable_run_activity_machine_representation_version": 2,
+  "run_id": "…",
+  "projection_status": "AVAILABLE",
+  "production_intent": "STEPS_INTENDED",
+  "activities": []
+}
+```
+
+Un seul champ s'ajoute au jeu de la représentation 1 : `production_intent`.
+
+| Champ | Rôle |
+|---|---|
+| `production_intent` | intention de production courante du run — **sous `AVAILABLE` uniquement** |
+
+```text
+JEU DE CHAMPS DU PRODUCTEUR v2   FERMÉ
+```
+
+### `production_intent`
+
+Vocabulaire **fermé** :
+
+```text
+STEPS_INTENDED
+NO_STEPS_INTENDED
+```
+
+C'est un champ de **niveau run**, jamais une activité :
+
+```text
+ACTIVITÉ   ≠   FAIT DE CYCLE DE VIE OU D'INTENTION
+```
+
+Le vocabulaire fermé d'`activity_kind` n'est pas élargi pour le porter.
+
+### Dérivation normative
+
+```text
+aucun fait d'intention applicable
+  →  STEPS_INTENDED
+
+dernier fait d'intention applicable = fin de production
+  →  NO_STEPS_INTENDED
+
+dernier fait d'intention applicable = réactivation
+  →  STEPS_INTENDED
+```
+
+### Hors `AVAILABLE`
+
+```text
+projection_status ≠ AVAILABLE   →   production_intent   CLÉ OMISE
+```
+
+```text
+absence   ≠  STEPS_INTENDED
+absence   ≠  NO_STEPS_INTENDED
+UNKNOWN   ≠  ZERO
+```
+
+Aucune intention n'est dérivée d'une histoire déclarée indisponible ou
+incomplète : ce serait affirmer depuis des faits partiels.
+
+### Non-affirmations
+
+```text
+NO_STEPS_INTENDED   ≠ correction        ≠ complétude
+                    ≠ vainqueur         ≠ accord d'un expert
+                    ≠ convergence       ≠ controverse résolue
+                    ≠ travail épuisé    ≠ quota épuisé
+                    ≠ absence de source transférable
+                    ≠ run terminé       ≠ CLOSED
+
+STEPS_INTENDED      ≠ pas actuellement admissible
+```
+
+Autorité sémantique du fait :
+[`docs/specs/production-intent.md`](production-intent.md).
 
 ---
 
@@ -541,11 +661,28 @@ l'entrée de contexte existante ; le chemin physique n'est pas représenté.
 # 15. Versions
 
 ```text
+REPRÉSENTATION 1
 durable_run_activity_contract_version                 1
 durable_run_activity_machine_representation_version   1
+
+REPRÉSENTATION 2
+durable_run_activity_contract_version                 2
+durable_run_activity_machine_representation_version   2
 ```
 
-Deux axes distincts et indépendants. Ne sont pas des discriminants de
+Deux axes distincts et indépendants. Qu'ils portent ici la même valeur est une
+coïncidence de cette évolution, jamais une règle : rien ne garantit qu'ils
+avanceront toujours ensemble.
+
+```text
+VERSION DE CONTRAT   ≠   VERSION DE REPRÉSENTATION
+NI L'UN NI L'AUTRE   ≠   VERSION DU PAQUET CCR
+```
+
+Une nouvelle version de contrat n'emporte aucune version majeure de paquet, et
+ce document n'en décide aucune.
+
+Ces deux axes ne sont pas des discriminants de
 protocole, et n'apparaissent pas dans le document :
 
 ```text
@@ -590,12 +727,17 @@ Ne sont **pas** définis par le contrat v1 : champs optionnels futurs, champs
 supplémentaires inconnus, compatibilité ascendante, politique de compatibilité
 additive, ni l'ajout futur d'une famille d'activité.
 
+La même réserve vaut pour le contrat v2. En particulier, l'existence de la
+représentation 2 ne crée aucune politique additive : elle est **choisie**, jamais
+servie par défaut.
+
 ---
 
 # 16. Références d'autorité
 
 | Sujet | Autorité |
 |---|---|
+| Intention de production d'un run | [`docs/specs/production-intent.md`](production-intent.md) |
 | Identité de run découvrable | [`docs/specs/run-inventory-machine.md`](run-inventory-machine.md) |
 | Descripteur sémantique de run | [`docs/specs/run-descriptors-machine.md`](run-descriptors-machine.md) |
 | Faits d'issue d'invocation | [`docs/specs/invocation-outcome.md`](invocation-outcome.md) |

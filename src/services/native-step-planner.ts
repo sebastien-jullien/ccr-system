@@ -35,6 +35,7 @@
 import { CcrError } from '../core/errors.ts';
 import { otherExpertSlot } from '../core/expert.ts';
 import type { ExpertSlotId, ProviderKind } from '../core/expert.ts';
+import { deriveProductionIntent } from '../core/production-intent.ts';
 import type { NativeCcrEvent, NativeRunManifest, NativeRunStateDocument } from '../core/run-native.ts';
 import { stepGuard } from '../core/run-guards.ts';
 import type { RunGuardFacts } from '../core/run-guards.ts';
@@ -128,6 +129,7 @@ export type NativeStepRefusalReason =
   | 'SESSION_ID_COLLISION'
   | 'AUTOMATION_NOT_IN_CONTROL'
   | 'ILLEGAL_STATE_TRANSITION'
+  | 'NO_FURTHER_PRODUCTION_STEPS_INTENDED'
   | 'NO_TRANSFERABLE_SOURCE'
   | 'SOURCE_ALREADY_TRANSFERRED'
   | 'SOURCE_STALE_AFTER_HANDOFF';
@@ -376,6 +378,37 @@ export function planNativeStep(input: NativeStepPlanInput): NativeStepPlan {
           ? `Le run ${runId} est sous contrôle ${state.control} : l'automatisation ne produit pas de tour.`
           : `Le run ${runId} est en ${state.state} : aucun tour ne peut en partir.`,
         { details: { runId, state: state.state, control: state.control } },
+      ),
+    );
+  }
+
+  // ---- 4 bis. Intention de production déclarée (P3).
+  //
+  // Après les gardes de contrôle et d'état, et avant la sélection de la source.
+  //
+  // Après, parce que P3 ne court-circuite aucune autorité : un run dont l'état
+  // ou le contrôle refuse déjà le tour garde son refus, plus précis que celui-ci.
+  //
+  // Avant, parce que le refus P3 ne doit dépendre d'aucun fait de source. Une
+  // source transférable en attente **survit** à une fin de production : rendre
+  // ici `NO_TRANSFERABLE_SOURCE` sur un run qui en possède une serait faux, et
+  // faire dépendre la déclaration humaine de l'existence d'une source
+  // subordonnerait l'autorité de contrôle à un accident du journal.
+  //
+  // Le refus est constaté par une décision pure, donc avant tout appel
+  // fournisseur, avant le quota, avant toute création d'invocation et avant
+  // toute consommation de source.
+  if (deriveProductionIntent(events) === 'NO_STEPS_INTENDED') {
+    return refuse(
+      'NO_FURTHER_PRODUCTION_STEPS_INTENDED',
+      new CcrError(
+        'NO_FURTHER_PRODUCTION_STEPS_INTENDED',
+        `L'autorité de contrôle humaine a déclaré qu'aucun pas de production natif supplémentaire ` +
+          `n'est présentement prévu pour le run ${runId}. Aucun fournisseur n'a été appelé, aucune ` +
+          "source n'a été consommée, et rien n'a été écrit. Cette déclaration ne dit rien de la " +
+          'correction, de la complétude, ni d\'un accord entre experts : elle se lève par ' +
+          '`ccr reactivate-production`.',
+        { details: { runId, production_intent: 'NO_STEPS_INTENDED' } },
       ),
     );
   }

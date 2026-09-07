@@ -430,6 +430,43 @@ export const HANDOFF_RESOLUTION_REASONS: Readonly<Record<HandoffResolutionEventT
   handoff_uncertainty_acknowledged: 'IN_FLIGHT_UNCERTAIN',
 };
 
+/**
+ * Intention de production, déclarée par l'autorité de contrôle humaine (P3).
+ *
+ * Deux faits, et deux seulement :
+ *
+ * ```text
+ * production_ended         aucun pas de production natif n'est présentement
+ *                          prévu pour ce run
+ * production_reactivated   des pas de production natifs sont de nouveau prévus
+ * ```
+ *
+ * Types propres à la génération native, et absents de `EVENT_TYPES` : aucun
+ * chemin historique ne les émet, et le journal historique les refuse — à la
+ * lecture parce que leur type lui est inconnu, à l'écriture parce que la garde
+ * de génération les rejette.
+ *
+ * Ils ne pouvaient pas rejoindre la classe neutre. `GENERATION_NEUTRAL` est
+ * dérivée d'`EventType` : y entrer aurait exigé de les inscrire dans le
+ * vocabulaire historique, donc de les rendre écrivables dans un journal legacy
+ * qui n'a pas d'expert et ne peut pas porter cette autorité.
+ *
+ * Ce qu'ils n'affirment jamais, et que rien de leur forme ne permet de déduire :
+ *
+ * ```text
+ * production_ended   ≠ run terminé          ≠ CLOSED
+ *                    ≠ correction établie   ≠ candidat complet
+ *                    ≠ accord des experts   ≠ convergence
+ *                    ≠ controverse résolue  ≠ travail épuisé
+ *                    ≠ absence de source transférable
+ * ```
+ *
+ * `CONVERGED` reste absent de la machine d'état, et P3 ne le réintroduit pas :
+ * la mesure de convergence n'appartient toujours pas à cette version.
+ */
+export const PRODUCTION_INTENT_EVENT_TYPES = ['production_ended', 'production_reactivated'] as const;
+export type ProductionIntentEventType = (typeof PRODUCTION_INTENT_EVENT_TYPES)[number];
+
 /** Types d'événement qu'un journal natif peut porter. */
 export type NativeEventType =
   | EventType
@@ -437,7 +474,8 @@ export type NativeEventType =
   | TransferQuarantineEventType
   | TransferAbortedEventType
   | SendResolutionEventType
-  | HandoffResolutionEventType;
+  | HandoffResolutionEventType
+  | ProductionIntentEventType;
 
 export type ExpertSessionEventType = (typeof EXPERT_SESSION_EVENT_TYPES)[number];
 export type ExpertTargetEventType = (typeof EXPERT_TARGET_EVENT_TYPES)[number];
@@ -624,6 +662,27 @@ export interface NativeTransferAbortedEvent extends NativeEventBase {
   readonly reason: TransferAbortedReason;
 }
 
+/**
+ * Intention de production déclarée — **aucune identité, aucune session**.
+ *
+ * Le fait ne concerne ni un expert, ni un fournisseur, ni une continuité
+ * native : il porte sur le run entier, et son autorité est humaine. Aucun champ
+ * de slot n'y a donc de sens, et la validation les refuse plutôt que de les
+ * ignorer.
+ *
+ * Il ne nomme pas davantage un envoi, une ouverture ou une source : il ne clôt
+ * aucune opération engagée, et ne prétend pas en connaître l'issue. Un transfert
+ * en attente reste exactement ce qu'il était.
+ *
+ * La note humaine, lorsqu'elle existe, voyage dans `content` — le champ dont le
+ * contrat est déjà « contenu textuel intégral, jamais résumé par CCR ». Elle est
+ * conservée verbatim, et reste opaque au raisonnement de CCR : elle ne prouve ni
+ * autorité, ni correction, ni accord, ni convergence.
+ */
+export interface NativeProductionIntentEvent extends NativeEventBase {
+  readonly type: ProductionIntentEventType;
+}
+
 export type NativeCcrEvent =
   | NativeExpertSessionEvent
   | NativeExpertTargetEvent
@@ -635,6 +694,7 @@ export type NativeCcrEvent =
   | NativeSendUncertaintyEvent
   | NativeHandoffAbortedEvent
   | NativeHandoffUncertaintyEvent
+  | NativeProductionIntentEvent
   | NativeGenerationNeutralEvent;
 
 type EventDraft<T> = T extends unknown
@@ -656,6 +716,7 @@ export type NewNativeCcrEvent = EventDraft<NativeCcrEvent>;
  * TRANSFER_ABORTED     source_slot_id + target_slot_id, jamais appelé
  * SEND_RESOLUTION      target_expert_slot_id + prompt_event_id, sans réponse
  * HANDOFF_RESOLUTION   target_expert_slot_id + started_event_id, sans réponse
+ * PRODUCTION_INTENT    aucune identité, aucune session, aucune opération close
  * GENERATION_NEUTRAL   aucune identité, aucune session
  * ```
  *
@@ -675,6 +736,7 @@ export type EveryEventTypeHasAProvenance = AssertNever<
     | TransferAbortedEventType
     | SendResolutionEventType
     | HandoffResolutionEventType
+    | ProductionIntentEventType
     | GenerationNeutralEventType
   >
 >;

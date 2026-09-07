@@ -85,6 +85,9 @@ test('(E1) statuts : chaque code publié a le statut attendu', () => {
     PROVIDER_ALIAS_NOT_BOUND: 422,
     SOURCE_NOT_REPLAYABLE: 422,
     SOURCE_STALE_AFTER_HANDOFF: 422,
+    // P3 : refus atteignable par la route `STEP`. Publié pour qu'il ne tombe
+    // pas en 500 avec son code remplacé.
+    NO_FURTHER_PRODUCTION_STEPS_INTENDED: 422,
     HANDOFF_NOT_ALLOWED: 422,
     RECOVERY_EVIDENCE_CONFLICT: 422,
     COMMAND_UNSUPPORTED_FOR_GENERATION: 422,

@@ -112,7 +112,15 @@ export type NativeTimelineProvenance =
       readonly provider: ProviderKind;
       readonly started_event_id: string;
     }
-  | { readonly shape: 'GENERATION_NEUTRAL' };
+  /**
+   * Les deux classes qui ne portent **aucune** identité.
+   *
+   * Elles partagent la forme sans se confondre : le discriminant reste
+   * distinct, parce qu'un fait d'intention de production est propre à la
+   * génération native, tandis qu'un fait neutre a le même contrat de fil dans
+   * les deux générations.
+   */
+  | { readonly shape: 'GENERATION_NEUTRAL' | 'PRODUCTION_INTENT' };
 
 /**
  * Une entrée de chronologie native.
@@ -251,9 +259,12 @@ function provenanceOf(manifest: NativeRunManifest, event: NativeCcrEvent): Nativ
         started_event_id: typed.started_event_id,
       };
     }
+    case 'PRODUCTION_INTENT':
     case 'GENERATION_NEUTRAL':
       // Aucune identité inventée : ce que l'événement ne porte pas, la
-      // chronologie ne le porte pas non plus.
+      // chronologie ne le porte pas non plus. Un fait d'intention de production
+      // porte sur le run, jamais sur un expert — lui attribuer un slot ou un
+      // moteur ferait croire qu'un expert l'a déclaré.
       return { shape };
   }
 }
