@@ -205,6 +205,29 @@ cet ajout. En particulier, `docs/specs/run-inventory-machine.md`,
 `docs/specs/invocation-outcome-machine.md` conservent leur autorité, leur sens
 et leurs frontières inchangés.
 
+**Contrat de domaine ajouté après v1.1.0**
+
+```text
+docs/specs/production-intent.md
+```
+
+```text
+CONTRATS SUPPORTÉS EXISTANTS   inchangés
+NOUVEAU CONTRAT SUPPORTÉ       intention de production d'un run
+CHANGEMENT DE COMPATIBILITÉ    additif
+APPARTENANCE À LA LIGNE DE BASE DE v1.0.0   inchangée
+```
+
+Ce document devient un contrat public supporté à compter de la version de paquet
+qui le publie. Il ne rejoint **pas** la ligne de base de v1.0.0, qui reste
+historiquement fixée à ses huit documents.
+
+Aucun contrat public supporté existant n'est modifié, réinterprété ni retiré par
+cet ajout. `docs/specs/run-descriptors-machine.md` conserve son autorité, son
+sens et ses frontières inchangés. `docs/specs/run-activity-machine.md` demeure
+l'autorité de sa propre surface : l'évolution de ses axes de version propres lui
+appartient, et relève du § 6 et du § 8, non de la présente énumération.
+
 ```text
 AJOUT D'UN CONTRAT SUPPORTÉ
   ≠  remplacement d'un contrat supporté existant

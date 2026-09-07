@@ -169,6 +169,24 @@ ccr run-activity <run_id> --format json    # lecture ; n'écrit rien
 
 `ccr run-activity <run_id> --format json` rend l'**activité procédurale durable** du run — démarrage, passages de témoin natifs et envois humains — sous forme d'activités logiques ordonnées. Un champ `projection_status` discrimine trois issues, toutes en code de sortie `0` : l'histoire complète, une histoire qui ne peut pas être établie, ou une projection qui ne peut pas être produite de façon fiable. Ce n'est pas un transcript : aucun contenu, aucune position et aucun argument n'y figurent. Sa structure et sa sémantique sont définies par [`docs/specs/run-activity-machine.md`](docs/specs/run-activity-machine.md).
 
+**Intention de production**
+
+```bash
+ccr end-production --note "campagne suspendue" --acknowledge-downgrade <run_id>
+ccr reactivate-production --note "reprise"
+ccr run-activity <run_id> --format json --machine-representation-version 2
+```
+
+`ccr end-production` enregistre durablement qu'**aucun pas de production natif supplémentaire n'est présentement prévu** pour ce run. C'est une déclaration procédurale de l'autorité humaine, et rien d'autre : elle ne dit rien de la correction du travail, de sa complétude, d'un accord entre experts ni d'une convergence. Le run n'est ni fermé ni suspendu, son état et son contrôle sont inchangés, son quota n'est pas touché, et une réponse encore transférable le reste. `--note` est obligatoire et conservée verbatim ; CCR ne l'interprète pas.
+
+`ccr reactivate-production` lève cette déclaration. C'est un acte distinct de `ccr resume` : il ne rend pas le run à l'automatisation et ne relance rien. Il n'efface pas non plus la déclaration précédente — le journal reste append-only. Lever l'interdiction ne rend aucun pas admissible par elle-même : le quota, l'état, le contrôle et les autres gardes continuent de décider pour leur compte.
+
+Tant que la déclaration est active, un passage de témoin est refusé **avant tout appel fournisseur**, sans consommer de source ni écrire quoi que ce soit. Les deux commandes sont idempotentes : demandées deux fois, la seconde n'écrit aucun fait.
+
+`ccr run-activity … --machine-representation-version 2` ajoute `production_intent` au document machine, sous `AVAILABLE` uniquement. La représentation `1` reste celle rendue **par défaut**, à l'identique : l'invocation historique ne change pas de document, et aucune montée n'a lieu sans être demandée. Sémantique du fait : [`docs/specs/production-intent.md`](docs/specs/production-intent.md).
+
+**Frontière de version.** Le premier fait d'intention réellement écrit dans un run exige un acquittement explicite, `--acknowledge-downgrade <run_id>`, demandé une seule fois et jamais ensuite. La raison est mesurée : à partir de ce fait, une version antérieure de CCR peut ne plus savoir consommer ce run par tous ses chemins de lecture du journal natif — certaines commandes échouent franchement, et la lecture d'activité déclare qu'elle ne peut pas produire la projection. Rien n'est ignoré en silence.
+
 **Dossier et débat**
 
 ```bash
