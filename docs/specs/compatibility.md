@@ -228,6 +228,109 @@ sens et ses frontières inchangés. `docs/specs/run-activity-machine.md` demeure
 l'autorité de sa propre surface : l'évolution de ses axes de version propres lui
 appartient, et relève du § 6 et du § 8, non de la présente énumération.
 
+**Cibles normatives ratifiées après v1.2.0 — NON IMPLÉMENTÉES, NON PUBLIÉES**
+
+```text
+docs/specs/run-invocation-accounting-machine.md
+docs/specs/run-operational-state-machine.md
+docs/specs/operation-invocation-effect-machine.md
+```
+
+```text
+AUTORITÉ NORMATIVE                      RATIFIÉE PAR L'HUMAIN
+IMPLÉMENTATION                          AUCUNE
+PUBLICATION                             AUCUNE
+APPARTENANCE À UNE LIGNE DE BASE
+  SUPPORTÉE PUBLIÉE                     AUCUNE
+CONTRATS SUPPORTÉS EXISTANTS            INCHANGÉS
+JEU DE CONTRATS SUPPORTÉS DE v1.2.0     INCHANGÉ
+APPARTENANCE À LA LIGNE DE BASE DE v1.0.0   inchangée
+```
+
+## 3.4.1 Trois états, jamais deux
+
+Un contrat traverse trois états distincts, et la présente section n'en confond
+aucun :
+
+```text
+1  PROPOSÉ · NON RATIFIÉ
+   un document existe · aucune autorité humaine ne l'a retenu
+
+2  CIBLE NORMATIVE RATIFIÉE PAR L'HUMAIN
+   NON IMPLÉMENTÉE · NON PUBLIÉE
+   l'autorité humaine a retenu le sens · aucun code ne le rend ·
+   aucune version publiée ne le contient
+
+3  IMPLÉMENTÉ · CONFORME · CONTRAT PUBLIC SUPPORTÉ PUBLIÉ
+   une implémentation le rend · sa conformité est établie ·
+   une version publiée le contient
+```
+
+```text
+R1 · R2 · P   =  ÉTAT 2
+```
+
+Ils ne sont **pas** en état 3, et rien dans ce document ne doit se lire comme tel.
+
+## 3.4.2 Ce que la ratification ne fait pas
+
+```text
+RATIFICATION NORMATIVE
+  ≠  implémentation
+  ≠  conformité établie
+  ≠  publication
+  ≠  entrée dans une ligne de base supportée
+  ≠  promesse de compatibilité opposable
+```
+
+Les commandes que ces documents décrivent — `ccr run-invocation-accounting`,
+`ccr run-operational-state`, `ccr operation-effects` — ne sont **pas** fournies
+par la version courante du produit. Leur syntaxe est une cible normative
+ratifiée, jamais une surface existante.
+
+Un consommateur ne peut donc s'appuyer sur aucun des trois aujourd'hui. Ils
+n'entreront dans le contrat public supporté qu'à la version de paquet qui les
+implémente et les publie, et cette entrée sera énoncée ici à ce moment-là.
+
+## 3.4.3 Ce que la ratification ne change pas
+
+Aucun contrat public supporté existant n'est modifié, réinterprété ni retiré.
+`docs/specs/run-inventory-machine.md`,
+`docs/specs/run-descriptors-machine.md`, `docs/specs/run-activity-machine.md`,
+`docs/specs/invocation-outcome.md`, `docs/specs/invocation-outcome-machine.md` et
+`docs/specs/production-intent.md` conservent leur autorité, leur sens et leurs
+frontières inchangés. En particulier :
+
+```text
+run-activity-machine.md         demeure l'autorité de l'activité procédurale
+                                ACTIVITÉ ≠ ISSUE D'INVOCATION reste intact
+invocation-outcome*.md          demeurent l'autorité des faits d'issue persistés
+                                un tableau vide reste une cardinalité
+production-intent.md            demeure l'autorité de l'intention de production
+                                aucune des trois cibles ne la reprojette
+```
+
+La ligne de base de v1.0.0 reste historiquement fixée à ses huit documents.
+
+```text
+LIGNE DE BASE DE v1.0.0   toujours exactement 8 documents
+```
+
+`docs/specs/run-operational-state-machine.md` **se réfère** au vocabulaire de
+rôle publié par `docs/specs/run-activity-machine.md` § 10, sans le redéfinir ni
+l'étendre. Une référence n'est pas une modification : l'évolution de ce
+vocabulaire demeure gouvernée par les axes de version du contrat qui le possède.
+
+```text
+RÉFÉRENCE À UN VOCABULAIRE PUBLIC EXISTANT
+  ≠  extension du contrat qui le possède
+```
+
+La sortie humaine de `ccr status` n'acquiert aucune promesse de compatibilité du
+fait de cette ratification : elle reste orientation et découverte au sens du
+§ 2.1. Ratifier R1, R2 et P ne promeut aucune sortie humaine en contrat machine
+supporté.
+
 ```text
 AJOUT D'UN CONTRAT SUPPORTÉ
   ≠  remplacement d'un contrat supporté existant
