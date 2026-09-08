@@ -123,9 +123,32 @@ L'absence est un fait exact, projeté comme tel.
 
 ## 2.3 Sélecteur
 
-Le `<run_id>` fourni **doit désigner un run existant** au sens de l'autorité
-canonique d'identité de run de CCR. Cette résolution précède **toute**
-interprétation de domaine :
+Le `<run_id>` fourni **doit désigner un run découvrable**. L'autorité qui en
+décide n'est pas créée ici : c'est celle, déjà supportée, de l'inventaire de
+runs.
+
+```text
+AUTORITÉ DE RÉSOLUTION DU SÉLECTEUR
+  =  autorité de découvrabilité de l'inventaire de runs
+```
+
+```text
+LE SÉLECTEUR RÉSOUT
+  SI ET SEULEMENT SI
+l'identité de run est reconnue DÉCOUVRABLE
+par l'autorité d'énumération des runs de CCR
+```
+
+Autorité de l'identité de run découvrable :
+[`docs/specs/run-inventory-machine.md`](run-inventory-machine.md).
+
+**Réemploi d'autorité sémantique, non composition procédurale.** Aucun
+consommateur n'est tenu d'appeler une surface F1 avant celle-ci. Ce contrat
+n'ajoute aucune séquence d'appels, aucune dépendance de commande, et aucune
+obligation d'ordre. Les deux surfaces descendent de la **même** autorité ; elles
+ne s'appellent pas l'une l'autre.
+
+Cette résolution précède **toute** interprétation de domaine :
 
 ```text
 RÉSOLUTION DU SÉLECTEUR
@@ -137,10 +160,33 @@ RÉSOLUTION DU SÉLECTEUR
 ```
 
 Ce contrat ne nomme aucun fichier, aucun chemin et aucun code d'erreur interne :
-la façon dont CCR établit l'existence d'un run est un détail d'implémentation,
-jamais une API publique.
+la façon dont l'autorité de découvrabilité conclut est un détail
+d'implémentation, jamais une API publique.
 
-### 2.3.1 Sélecteur qui ne résout pas
+### 2.3.1 La découvrabilité ne dépend pas de la lisibilité
+
+L'inventaire de runs l'énonce pour lui-même, et ce contrat ne le réinterprète
+pas — il en hérite :
+
+```text
+« La lisibilité des documents d'un run n'est pas une condition d'inclusion. »
+                                          run-inventory-machine.md · § 1.2
+```
+
+Il suit, pour ce contrat :
+
+```text
+identité découvrable · métadonnée de domaine ABSENTE     →  SÉLECTEUR RÉSOLU
+identité découvrable · métadonnée de domaine ILLISIBLE   →  SÉLECTEUR RÉSOLU
+identité NON DÉCOUVRABLE                                 →  SÉLECTEUR NON RÉSOLU
+```
+
+Par **métadonnée de domaine**, ce contrat entend toute donnée décrivant le run
+qui n'est pas une autorité de ce contrat — sa génération d'exécution, son état
+opérationnel, son titre. Aucune d'elles n'est un préalable ici, et leur
+défaillance ne se convertit en aucun fait de ce contrat.
+
+### 2.3.2 Sélecteur qui ne résout pas
 
 ```text
 code de sortie          1
@@ -150,33 +196,86 @@ projection_status       AUCUN — il n'existe pas de document de projection
 stderr                  un diagnostic est permis · non normatif
 ```
 
-Un run inexistant n'est pas un run dont on rendrait un état comptable : il n'y a
-pas d'objet dont parler, et ce contrat ne fabrique rien pour combler ce vide.
+Une identité non découvrable n'est pas un run dont on rendrait un état comptable :
+il n'y a pas d'objet dont parler, et ce contrat ne fabrique rien pour combler ce
+vide.
 
-### 2.3.2 Ce que les faits de ce contrat présupposent
+### 2.3.3 Ce que les faits de ce contrat présupposent
 
 ```text
-budget_policy = NONE     fait autoritatif sur un run EXISTANT
+budget_policy = NONE     fait autoritatif sur un run DÉCOUVRABLE
                          — aucune politique de quota n'y a été posée
-coverage = PRE_LEDGER    fait de couverture sur un run EXISTANT
+coverage = PRE_LEDGER    fait de couverture sur un run DÉCOUVRABLE
                          — son historique comptable n'est pas reconstructible
 projection_status
-  = AVAILABLE            fait de projection sur un run EXISTANT
+  = AVAILABLE            fait de projection sur un run DÉCOUVRABLE
 ```
 
-Aucun des trois ne décrit un run absent, et aucun ne peut servir à le
-représenter.
+Aucun des trois ne décrit une identité non découvrable, et aucun ne peut servir à
+la représenter.
 
 ```text
-RUN INEXISTANT   ≠  NONE
-RUN INEXISTANT   ≠  PRE_LEDGER
-RUN INEXISTANT   ≠  AVAILABLE
+IDENTITÉ NON DÉCOUVRABLE   ≠  NONE
+IDENTITÉ NON DÉCOUVRABLE   ≠  PRE_LEDGER
+IDENTITÉ NON DÉCOUVRABLE   ≠  AVAILABLE
 ```
 
 Employer l'un d'eux pour un sélecteur qui ne résout pas affirmerait une propriété
 d'un objet qui n'existe pas — et ferait passer une ignorance pour une
 connaissance exacte, ce que le § 4.4 interdit déjà pour toute autre
 représentation.
+
+Réciproquement, et c'est l'autre bord :
+
+```text
+NONE                 ≠  sélecteur non résolu
+PRE_LEDGER           ≠  sélecteur non résolu
+PROJECTION_FAILURE   ≠  sélecteur non résolu
+```
+
+### 2.3.4 Ce contrat n'a aucun étage d'applicabilité
+
+Le sélecteur résolu, ce contrat n'évalue plus que **ses propres autorités** :
+
+```text
+politique d'invocation      § 4
+journal d'invocations       § 5 · § 6 · § 7
+```
+
+Et rien d'autre. La génération d'exécution du run et sa métadonnée
+opérationnelle ne deviennent **pas** un préalable : elles ne sont pas des
+autorités de ce contrat (§ 1.4), et la comptabilité d'invocation s'applique à
+tout run découvrable, quelle que soit sa génération.
+
+```text
+CE CONTRAT   =  résolution du sélecteur, puis projection
+             SANS étage d'applicabilité de domaine
+```
+
+Conséquences, exhaustives, pour un run découvrable :
+
+```text
+politique ABSENTE                            →  budget_policy NONE      · § 2.2
+journal ABSENT                               →  coverage PRE_LEDGER     · § 2.2
+politique PRÉSENTE mais ILLISIBLE            →  PROJECTION_FAILURE      · § 2.1
+journal PRÉSENT mais ILLISIBLE               →  PROJECTION_FAILURE      · § 2.1
+métadonnée de domaine ABSENTE ou ILLISIBLE   →  SANS EFFET sur ce contrat
+```
+
+`PROJECTION_FAILURE` nomme la défaillance d'une autorité **de ce contrat**, après
+résolution du sélecteur, et rien d'autre. Une métadonnée de domaine absente ou
+illisible n'en est donc jamais une cause, pas plus qu'elle n'est un échec de
+sélecteur.
+
+```text
+identité NON DÉCOUVRABLE
+  →  code de sortie 1 · aucun document · § 2.3.2
+
+identité DÉCOUVRABLE
+  →  CE CONTRAT RÉPOND — que sa métadonnée de domaine soit établie,
+     absente ou illisible, et quelle que soit sa génération
+     le document rendu ne dépend QUE des faits de politique et de journal
+```
 
 ---
 
@@ -426,7 +525,9 @@ contrats. Une telle dérivation est explicitement **non supportée**.
 # 8. Sémantiques négatives
 
 ```text
-run inexistant    aucun document · code de sortie 1 · voir § 2.3
+non découvrable   aucun document · code de sortie 1 · voir § 2.3
+métadonnée de domaine absente ou illisible
+                  sans effet sur ce contrat · voir § 2.3.4
 faux              n'apparaît que pour `exhausted`, et décrit la politique
 zéro              un compte exact de zéro engagement, sous SINCE_LEDGER_START
 absent            politique absente = kind NONE

@@ -87,7 +87,10 @@ NOT_APPLICABLE       le run existe mais n'est pas de génération native
 PROJECTION_FAILURE   l'état s'applique mais n'a pas pu être établi de façon fiable
 ```
 
-Les trois issues sortent en code `0`.
+Les trois issues sortent en code `0`. Elles présupposent toutes que le sélecteur
+a résolu **et** que l'applicabilité a été déterminée : les deux situations où
+l'une ou l'autre manque ne portent aucun statut, et ne rendent aucun document
+(§ 2.3).
 
 ## 2.1 Non-identités de statut
 
@@ -96,8 +99,10 @@ NOT_APPLICABLE   ≠ UNKNOWN
 NOT_APPLICABLE   ≠ PROJECTION_FAILURE
 NOT_APPLICABLE   ≠ run inexistant
 NOT_APPLICABLE   ≠ run vide
+NOT_APPLICABLE   ≠ applicabilité non établissable · § 2.3.4
 PROJECTION_FAILURE ≠ absence de données
 PROJECTION_FAILURE ≠ défaut du run
+PROJECTION_FAILURE ≠ applicabilité non établissable · § 2.3.4
 ```
 
 `NOT_APPLICABLE` est une réponse **complète** : le run est connu, et la question
@@ -112,27 +117,76 @@ NOT_APPLICABLE       aucune autre clé
 PROJECTION_FAILURE   aucune autre clé
 ```
 
-## 2.3 Sélecteur
+## 2.3 Sélecteur et applicabilité
 
-Le `<run_id>` fourni **doit désigner un run existant** au sens de l'autorité
-canonique d'identité de run de CCR. Cette résolution précède **toute**
-interprétation de domaine :
+Ce contrat répond en **trois temps ordonnés**. Chacun a sa propre issue, et
+aucune ne se substitue à une autre.
 
 ```text
-RÉSOLUTION DU SÉLECTEUR
-  →  AVANT l'applicabilité native
-  →  AVANT native_state
-  →  AVANT terminal
-  →  AVANT control_owner
-  →  AVANT next_transfer_plan
-  →  AVANT projection_status
+S1   RÉSOLUTION DU SÉLECTEUR      l'identité de run est-elle découvrable ?
+S2   APPLICABILITÉ DE DOMAINE     la génération de ce run porte-t-elle un état
+                                  opérationnel natif ?
+S3   PROJECTION                   cet état peut-il être établi de façon fiable ?
 ```
 
-Ce contrat ne nomme aucun fichier, aucun chemin et aucun code d'erreur interne :
-la façon dont CCR établit l'existence d'un run est un détail d'implémentation,
-jamais une API publique.
+```text
+S1  →  AVANT S2
+S2  →  AVANT S3
+S3  →  AVANT native_state · terminal · control_owner · next_transfer_plan
+```
 
-### 2.3.1 Sélecteur qui ne résout pas
+`projection_status` n'existe qu'au terme de S2 : les trois statuts du § 2 sont
+des issues de S2 et de S3, jamais de S1.
+
+### 2.3.1 S1 — autorité de résolution
+
+Le `<run_id>` fourni **doit désigner un run découvrable**. L'autorité qui en
+décide n'est pas créée ici : c'est celle, déjà supportée, de l'inventaire de
+runs.
+
+```text
+AUTORITÉ DE RÉSOLUTION DU SÉLECTEUR
+  =  autorité de découvrabilité de l'inventaire de runs
+```
+
+```text
+LE SÉLECTEUR RÉSOUT
+  SI ET SEULEMENT SI
+l'identité de run est reconnue DÉCOUVRABLE
+par l'autorité d'énumération des runs de CCR
+```
+
+Autorité de l'identité de run découvrable :
+[`docs/specs/run-inventory-machine.md`](run-inventory-machine.md).
+
+**Réemploi d'autorité sémantique, non composition procédurale.** Aucun
+consommateur n'est tenu d'appeler une surface F1 avant celle-ci. Ce contrat
+n'ajoute aucune séquence d'appels, aucune dépendance de commande, et aucune
+obligation d'ordre. Les deux surfaces descendent de la **même** autorité ; elles
+ne s'appellent pas l'une l'autre.
+
+L'inventaire de runs l'énonce pour lui-même, et ce contrat ne le réinterprète
+pas — il en hérite :
+
+```text
+« La lisibilité des documents d'un run n'est pas une condition d'inclusion. »
+                                          run-inventory-machine.md · § 1.2
+```
+
+```text
+identité découvrable · métadonnée de domaine ABSENTE     →  S1 RÉUSSIT
+identité découvrable · métadonnée de domaine ILLISIBLE   →  S1 RÉUSSIT
+identité NON DÉCOUVRABLE                                 →  S1 ÉCHOUE
+```
+
+Une métadonnée de domaine illisible ne rend donc pas une identité indisponible :
+elle empêche S2, ce qui est une autre chose et reçoit une autre issue (§ 2.3.3).
+
+Ce contrat ne nomme aucun fichier, aucun chemin et aucun code d'erreur interne :
+la façon dont l'autorité de découvrabilité conclut est un détail
+d'implémentation, jamais une API publique.
+
+### 2.3.2 S1 qui échoue — sélecteur qui ne résout pas
 
 ```text
 code de sortie          1
@@ -142,7 +196,75 @@ projection_status       AUCUN — il n'existe pas de document de projection
 stderr                  un diagnostic est permis · non normatif
 ```
 
-### 2.3.2 Ce que les deux statuts non disponibles présupposent
+### 2.3.3 S2 — détermination de l'applicabilité
+
+Sur un run découvrable, ce contrat détermine si la génération du run porte un
+état opérationnel natif. Trois issues, et trois seulement :
+
+```text
+génération ÉTABLIE native
+  →  S3 · la projection est tentée
+
+génération ÉTABLIE non native
+  →  NOT_APPLICABLE · code de sortie 0
+     le run est connu, et la question n'a pas de sens pour lui
+
+APPLICABILITÉ NON ÉTABLISSABLE
+  →  code de sortie 1
+  →  stdout AUCUN document machine · ni abouti, ni partiel
+  →  AUCUN projection_status
+  →  stderr : un diagnostic est permis · non normatif
+```
+
+Une applicabilité non établissable n'est pas une réponse à la question posée :
+c'est l'impossibilité de savoir si cette question a un sens pour ce run. Le
+sujet existe — il est découvrable —, mais rien n'autorise encore à dire que son
+état opérationnel natif s'applique, ni qu'il ne s'applique pas. Ce contrat ne
+tranche pas à la place de ce qu'il ignore, et ne rend donc aucun document.
+
+Cette règle est celle que la ligne de base tient déjà pour l'activité durable
+d'un run :
+
+```text
+« Un run dont l'applicabilité elle-même ne peut pas être établie ne rend aucun
+  document. »                              run-activity-machine.md · § 2.3
+```
+
+### 2.3.4 Non-identités de l'applicabilité non établissable
+
+```text
+APPLICABILITÉ NON ÉTABLISSABLE   ≠  NOT_APPLICABLE
+```
+
+`NOT_APPLICABLE` affirme une génération **établie** comme non native. Ne pas
+pouvoir l'établir n'est pas l'avoir établie négativement.
+
+```text
+APPLICABILITÉ NON ÉTABLISSABLE   ≠  PROJECTION_FAILURE
+```
+
+`PROJECTION_FAILURE` présuppose l'applicabilité établie (§ 2.3.5). L'employer
+ici affirmerait S2 pour rendre compte de l'échec de S2.
+
+```text
+APPLICABILITÉ NON ÉTABLISSABLE   ≠  statut UNKNOWN
+APPLICABILITÉ NON ÉTABLISSABLE   ≠  sélecteur non résolu
+```
+
+Le sélecteur a résolu : le sujet existe et il est découvrable. C'est la question
+qui reste indéterminée, pas l'objet.
+
+```text
+AUCUN QUATRIÈME STATUT DE PROJECTION
+AUCUN `UNAVAILABLE`
+AUCUN VOCABULAIRE MACHINE NOUVEAU
+```
+
+Le vocabulaire de `projection_status` reste exactement celui du § 2. Une issue
+sans document n'a besoin d'aucun jeton pour exister — c'est précisément ce que
+le code de sortie 1 signifie déjà.
+
+### 2.3.5 S3 — ce que les deux statuts non disponibles présupposent
 
 ```text
 NOT_APPLICABLE
@@ -159,13 +281,26 @@ Un sélecteur qui ne résout pas ne satisfait ni l'une ni l'autre présuppositio
 il n'y a pas de sujet.
 
 ```text
-RUN INEXISTANT   ≠  NOT_APPLICABLE
-RUN INEXISTANT   ≠  PROJECTION_FAILURE
+IDENTITÉ NON DÉCOUVRABLE   ≠  NOT_APPLICABLE
+IDENTITÉ NON DÉCOUVRABLE   ≠  PROJECTION_FAILURE
 ```
 
 Aucun statut de projection n'est créé pour le représenter, et le vocabulaire de
 `projection_status` n'est pas élargi pour le porter — pas davantage qu'il
 n'accueille `UNAVAILABLE`.
+
+Une fois l'applicabilité établie comme native, en revanche, l'échec appartient
+bien à S3 et **reste** un fait rendu :
+
+```text
+applicabilité ÉTABLIE native · état absent      →  PROJECTION_FAILURE · code 0
+applicabilité ÉTABLIE native · état illisible   →  PROJECTION_FAILURE · code 0
+```
+
+L'issue sans document du § 2.3.3 est réservée à l'applicabilité non
+établissable. Elle n'absorbe aucun échec légitime de projection en aval, et
+n'autorise aucune implémentation à convertir un `PROJECTION_FAILURE` dû en échec
+de commande.
 
 ---
 
@@ -480,7 +615,9 @@ d'un pas natif, et ce contrat n'énonce aucune règle de composition.
 # 9. Sémantiques négatives
 
 ```text
-run inexistant    aucun document · code de sortie 1 · voir § 2.3
+non découvrable   aucun document · code de sortie 1 · voir § 2.3.2
+applicabilité non établissable
+                  aucun document · code de sortie 1 · voir § 2.3.3
 faux              `terminal` et `available` portent un faux exact, jamais une ignorance
 zéro              aucun champ numérique de ce contrat n'admet zéro comme sentinelle
 absent            champ absent = structurellement non applicable au statut rendu
