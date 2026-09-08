@@ -121,6 +121,63 @@ journal d'invocations ABSENT     → AVAILABLE · couverture PRE_LEDGER
 
 L'absence est un fait exact, projeté comme tel.
 
+## 2.3 Sélecteur
+
+Le `<run_id>` fourni **doit désigner un run existant** au sens de l'autorité
+canonique d'identité de run de CCR. Cette résolution précède **toute**
+interprétation de domaine :
+
+```text
+RÉSOLUTION DU SÉLECTEUR
+  →  AVANT budget_policy
+  →  AVANT coverage
+  →  AVANT consumed · remaining · exhausted
+  →  AVANT trigger_attribution
+  →  AVANT projection_status
+```
+
+Ce contrat ne nomme aucun fichier, aucun chemin et aucun code d'erreur interne :
+la façon dont CCR établit l'existence d'un run est un détail d'implémentation,
+jamais une API publique.
+
+### 2.3.1 Sélecteur qui ne résout pas
+
+```text
+code de sortie          1
+stdout                  AUCUN document machine
+                        ni abouti, ni partiel
+projection_status       AUCUN — il n'existe pas de document de projection
+stderr                  un diagnostic est permis · non normatif
+```
+
+Un run inexistant n'est pas un run dont on rendrait un état comptable : il n'y a
+pas d'objet dont parler, et ce contrat ne fabrique rien pour combler ce vide.
+
+### 2.3.2 Ce que les faits de ce contrat présupposent
+
+```text
+budget_policy = NONE     fait autoritatif sur un run EXISTANT
+                         — aucune politique de quota n'y a été posée
+coverage = PRE_LEDGER    fait de couverture sur un run EXISTANT
+                         — son historique comptable n'est pas reconstructible
+projection_status
+  = AVAILABLE            fait de projection sur un run EXISTANT
+```
+
+Aucun des trois ne décrit un run absent, et aucun ne peut servir à le
+représenter.
+
+```text
+RUN INEXISTANT   ≠  NONE
+RUN INEXISTANT   ≠  PRE_LEDGER
+RUN INEXISTANT   ≠  AVAILABLE
+```
+
+Employer l'un d'eux pour un sélecteur qui ne résout pas affirmerait une propriété
+d'un objet qui n'existe pas — et ferait passer une ignorance pour une
+connaissance exacte, ce que le § 4.4 interdit déjà pour toute autre
+représentation.
+
 ---
 
 # 3. Document
@@ -369,6 +426,7 @@ contrats. Une telle dérivation est explicitement **non supportée**.
 # 8. Sémantiques négatives
 
 ```text
+run inexistant    aucun document · code de sortie 1 · voir § 2.3
 faux              n'apparaît que pour `exhausted`, et décrit la politique
 zéro              un compte exact de zéro engagement, sous SINCE_LEDGER_START
 absent            politique absente = kind NONE

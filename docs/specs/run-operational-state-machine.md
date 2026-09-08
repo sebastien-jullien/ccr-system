@@ -112,6 +112,61 @@ NOT_APPLICABLE       aucune autre clé
 PROJECTION_FAILURE   aucune autre clé
 ```
 
+## 2.3 Sélecteur
+
+Le `<run_id>` fourni **doit désigner un run existant** au sens de l'autorité
+canonique d'identité de run de CCR. Cette résolution précède **toute**
+interprétation de domaine :
+
+```text
+RÉSOLUTION DU SÉLECTEUR
+  →  AVANT l'applicabilité native
+  →  AVANT native_state
+  →  AVANT terminal
+  →  AVANT control_owner
+  →  AVANT next_transfer_plan
+  →  AVANT projection_status
+```
+
+Ce contrat ne nomme aucun fichier, aucun chemin et aucun code d'erreur interne :
+la façon dont CCR établit l'existence d'un run est un détail d'implémentation,
+jamais une API publique.
+
+### 2.3.1 Sélecteur qui ne résout pas
+
+```text
+code de sortie          1
+stdout                  AUCUN document machine
+                        ni abouti, ni partiel
+projection_status       AUCUN — il n'existe pas de document de projection
+stderr                  un diagnostic est permis · non normatif
+```
+
+### 2.3.2 Ce que les deux statuts non disponibles présupposent
+
+```text
+NOT_APPLICABLE
+  = un run CONNU, dont la génération ne porte pas d'état opérationnel natif
+  la question a un sujet ; elle n'a pas de sens pour lui
+
+PROJECTION_FAILURE
+  = l'applicabilité est ÉTABLIE, et la projection n'a pas pu l'être de façon
+    fiable
+  la question a un sujet, et la réponse a échoué
+```
+
+Un sélecteur qui ne résout pas ne satisfait ni l'une ni l'autre présupposition :
+il n'y a pas de sujet.
+
+```text
+RUN INEXISTANT   ≠  NOT_APPLICABLE
+RUN INEXISTANT   ≠  PROJECTION_FAILURE
+```
+
+Aucun statut de projection n'est créé pour le représenter, et le vocabulaire de
+`projection_status` n'est pas élargi pour le porter — pas davantage qu'il
+n'accueille `UNAVAILABLE`.
+
 ---
 
 # 3. Document
@@ -425,6 +480,7 @@ d'un pas natif, et ce contrat n'énonce aucune règle de composition.
 # 9. Sémantiques négatives
 
 ```text
+run inexistant    aucun document · code de sortie 1 · voir § 2.3
 faux              `terminal` et `available` portent un faux exact, jamais une ignorance
 zéro              aucun champ numérique de ce contrat n'admet zéro comme sentinelle
 absent            champ absent = structurellement non applicable au statut rendu
