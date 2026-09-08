@@ -722,6 +722,11 @@ const NATIVE_ENGINE_FILES = [
   // La composition native des mutations : precondition de vue et capture de
   // revision, autour des moteurs geles.
   'services/native-mutations.ts',
+  // Contrat R2 : la projection publique de l'etat operationnel lit le modele
+  // natif — manifest, `state.json`, journal d'evenements — et n'ecrit rien.
+  // Meme categorie que la projection 2D : un moteur natif en lecture seule, pas
+  // un service historique.
+  'services/run-operational-state-read.ts',
   // V2.3-S1 : la projection de presentation compose au-dessus du snapshot natif
   // deja lu. Elle lit le modele natif, n'ecrit rien, et ne touche pas `rounds/`.
   'services/cockpit-presentation.ts',

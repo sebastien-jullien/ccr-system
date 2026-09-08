@@ -133,6 +133,28 @@ export type CcrErrorCode =
    */
   | 'COMMAND_UNSUPPORTED_FOR_GENERATION'
   /**
+   * Le run est découvrable, mais l'applicabilité du domaine visé ne peut pas
+   * être établie — sa génération d'exécution reste indéterminée.
+   *
+   * Distinct des deux codes qui l'encadrent, et c'est tout l'intérêt :
+   *
+   * ```text
+   * RUN_NOT_FOUND                     le sujet n'existe pas
+   * CE CODE                           le sujet existe, la question reste sans
+   *                                   sens établi ni établi absent
+   * COMMAND_UNSUPPORTED_FOR_GENERATION la génération est ÉTABLIE, et la surface
+   *                                   ne la sert pas
+   * ```
+   *
+   * Réutiliser `RUN_NOT_FOUND` ici déclarerait inexistant un run bien
+   * découvrable ; réutiliser `MANIFEST_INVALID` affirmerait une cause de
+   * lecture précise là où seule l'indétermination est acquise.
+   *
+   * Code **interne** : aucun contrat public ne le nomme, et aucune surface
+   * machine ne le rend.
+   */
+  | 'NATIVE_APPLICABILITY_NOT_ESTABLISHED'
+  /**
    * L'engagement d'invocation n'a pas pu être persisté (CCR V2.2).
    *
    * Panne de **CCR**, jamais de l'expert : aucun fournisseur n'a été appelé, et

@@ -228,7 +228,7 @@ sens et ses frontières inchangés. `docs/specs/run-activity-machine.md` demeure
 l'autorité de sa propre surface : l'évolution de ses axes de version propres lui
 appartient, et relève du § 6 et du § 8, non de la présente énumération.
 
-**Cibles normatives ratifiées après v1.2.0 — NON IMPLÉMENTÉES, NON PUBLIÉES**
+**Contrats ratifiés après v1.2.0 — IMPLÉMENTÉS EN LIGNE DE BASE SOURCE, NON PUBLIÉS**
 
 ```text
 docs/specs/run-invocation-accounting-machine.md
@@ -238,7 +238,8 @@ docs/specs/operation-invocation-effect-machine.md
 
 ```text
 AUTORITÉ NORMATIVE                      RATIFIÉE PAR L'HUMAIN
-IMPLÉMENTATION                          AUCUNE
+IMPLÉMENTATION                          PRÉSENTE DANS LA LIGNE DE BASE SOURCE
+CONFORMITÉ DE CES TROIS CONTRATS        ÉTABLIE
 PUBLICATION                             AUCUNE
 APPARTENANCE À UNE LIGNE DE BASE
   SUPPORTÉE PUBLIÉE                     AUCUNE
@@ -247,9 +248,46 @@ JEU DE CONTRATS SUPPORTÉS DE v1.2.0     INCHANGÉ
 APPARTENANCE À LA LIGNE DE BASE DE v1.0.0   inchangée
 ```
 
-## 3.4.1 Trois états, jamais deux
+La version publiée courante du paquet — **1.2.0** — ne fournit aucune des trois
+commandes. Une implémentation conforme existe dans la ligne de base source ;
+aucune version publiée ne la contient.
 
-Un contrat traverse trois états distincts, et la présente section n'en confond
+**Portée exacte de « conformité établie ».** Elle porte sur ces trois contrats,
+et sur eux seuls :
+
+```text
+CONFORMITÉ R1 · R2 · P                  ÉTABLIE
+IDENTITÉ D'ÉCHEC D'INTÉGRATION
+  PROPRE À CETTE IMPLÉMENTATION         AUCUNE ÉTABLIE
+    au sens du protocole différentiel prédéclaré, par identité, sur
+    campagnes complètes appariées — candidat contre autorité vierge
+SUITE CANONIQUE D'INTÉGRATION           ROUGE ET INSTABLE
+VÉRIFICATION COMPLÈTE DU DÉPÔT          NON
+```
+
+```text
+CONFORMITÉ DE CONTRAT ÉTABLIE   ≠   VÉRIFICATION COMPLÈTE DU DÉPÔT
+```
+
+La suite canonique d'intégration reste **rouge et instable**. Selon le protocole
+différentiel prédéclaré par identité, aucune identité d'échec propre à cette
+implémentation n'a été établie.
+
+Ce résultat est exactement celui-là, et rien de plus. Il ne vaut ni suite verte,
+ni démonstration que cette implémentation serait sans effet sur la fréquence des
+instabilités observées : le protocole compare des identités, il ne mesure pas des
+fréquences. La vérification complète du dépôt reste non verte.
+
+```text
+AUCUNE IDENTITÉ PROPRE ÉTABLIE   ≠  suite verte
+                                 ≠  absence d'effet sur la fréquence des
+                                    instabilités observées
+                                 ≠  vérification complète du dépôt
+```
+
+## 3.4.1 Quatre états, jamais trois
+
+Un contrat traverse quatre états distincts, et la présente section n'en confond
 aucun :
 
 ```text
@@ -261,16 +299,41 @@ aucun :
    l'autorité humaine a retenu le sens · aucun code ne le rend ·
    aucune version publiée ne le contient
 
+2-BIS  IMPLÉMENTÉ EN LIGNE DE BASE SOURCE · CONFORME · NON PUBLIÉ
+   l'autorité humaine a retenu le sens · une implémentation le rend dans la
+   ligne de base source · sa conformité de contrat est établie ·
+   aucune version publiée ne le contient
+
 3  IMPLÉMENTÉ · CONFORME · CONTRAT PUBLIC SUPPORTÉ PUBLIÉ
    une implémentation le rend · sa conformité est établie ·
    une version publiée le contient
 ```
 
+L'état intermédiaire porte le repère **2-bis** et non un nouveau numéro de
+séquence : les états 1, 2 et 3 gardent leur identifiant et leur sens exacts, et
+en particulier l'état publié reste l'**état 3**, celui qu'il a toujours été. Un
+contrat déjà parvenu en état 3 n'est ni renuméroté, ni réinterprété.
+
 ```text
-R1 · R2 · P   =  ÉTAT 2
+ORDRE   1  <  2  <  2-bis  <  3
 ```
 
-Ils ne sont **pas** en état 3, et rien dans ce document ne doit se lire comme tel.
+```text
+R1 · R2 · P   =  ÉTAT 2-BIS
+```
+
+Ils ne sont **pas** en état 3, et rien dans ce document ne doit se lire comme
+tel. Le passage de 2-bis à 3 est un acte distinct — la version de paquet qui les
+publie, énoncée ici à ce moment-là.
+
+```text
+ENTRÉE DU CODE DANS LA LIGNE DE BASE SOURCE   =  2  →  2-bis
+PUBLICATION PAR UNE VERSION DE PAQUET         =  2-bis  →  3
+```
+
+**Repère non ratifié.** Le nom et le repère `2-bis` de cet état intermédiaire
+sont une proposition matérialisée : la sémantique de l'état est retenue par
+l'autorité humaine, sa désignation ne l'est pas encore.
 
 ## 3.4.2 Ce que la ratification ne fait pas
 
@@ -283,14 +346,34 @@ RATIFICATION NORMATIVE
   ≠  promesse de compatibilité opposable
 ```
 
+Ces non-identités portent sur l'**acte** de ratification, jamais sur l'état
+courant d'un contrat donné : que R1, R2 et P soient aujourd'hui implémentés et
+conformes ne vient pas de leur ratification, mais d'actes distincts et
+postérieurs.
+
 Les commandes que ces documents décrivent — `ccr run-invocation-accounting`,
 `ccr run-operational-state`, `ccr operation-effects` — ne sont **pas** fournies
-par la version courante du produit. Leur syntaxe est une cible normative
-ratifiée, jamais une surface existante.
+par la version publiée courante du produit. Leur syntaxe est implémentée dans la
+ligne de base source, et n'est pour autant le contrat public supporté d'aucune
+version publiée.
+
+```text
+SURFACE IMPLÉMENTÉE EN LIGNE DE BASE SOURCE
+  ≠  CONTRAT PUBLIC SUPPORTÉ PUBLIÉ
+```
 
 Un consommateur ne peut donc s'appuyer sur aucun des trois aujourd'hui. Ils
 n'entreront dans le contrat public supporté qu'à la version de paquet qui les
-implémente et les publie, et cette entrée sera énoncée ici à ce moment-là.
+publie, et cette entrée sera énoncée ici à ce moment-là.
+
+Ce qui vaut du code vaut du document : la présence de ces spécifications dans
+Git depuis leur ratification n'a jamais valu publication de contrat, et leur
+implémentation dans la ligne de base source ne la vaut pas davantage.
+
+```text
+DOCUMENT NORMATIF PRÉSENT DANS GIT   ≠  CONTRAT PUBLIC SUPPORTÉ PUBLIÉ
+CODE PRÉSENT DANS GIT                ≠  CONTRAT PUBLIC SUPPORTÉ PUBLIÉ
+```
 
 ## 3.4.3 Ce que la ratification ne change pas
 

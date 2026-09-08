@@ -70,6 +70,20 @@ import {
   serializeRunActivity,
 } from './run-activity-machine.ts';
 import type { RunActivityMachineRepresentationVersion } from './run-activity-machine.ts';
+import { readRunInvocationAccounting } from '../services/run-invocation-accounting-read.ts';
+import {
+  RUN_INVOCATION_ACCOUNTING_FORMAT,
+  serializeRunInvocationAccounting,
+} from './run-invocation-accounting-machine.ts';
+import { readRunOperationalState } from '../services/run-operational-state-read.ts';
+import {
+  RUN_OPERATIONAL_STATE_FORMAT,
+  serializeRunOperationalState,
+} from './run-operational-state-machine.ts';
+import {
+  OPERATION_INVOCATION_EFFECT_FORMAT,
+  serializeOperationInvocationEffects,
+} from './operation-invocation-effect-machine.ts';
 import { endNativeProduction, reactivateNativeProduction } from '../services/native-production-service.ts';
 import {
   isNativeRecoveryDomain,
@@ -164,6 +178,33 @@ Usage :
              sort en 2, sans document.
 
   ccr status [<run_id>] [--runs-dir <répertoire>]
+
+  ccr run-invocation-accounting <run_id> --format json [--runs-dir <répertoire>]
+             Comptabilité machine des invocations du run : politique de quota,
+             consommation durable et attribution par déclencheur.
+             « budget_policy » est une union discriminée — aucune politique, ou
+             une politique et son maximum. Absence et zéro sont opposés.
+             « coverage » dit ce que le compte couvre : sans journal, la
+             consommation antérieure n'est pas reconstructible, et aucun zéro
+             n'est rendu. Structure :
+             docs/specs/run-invocation-accounting-machine.md
+
+  ccr run-operational-state <run_id> --format json [--runs-dir <répertoire>]
+             État opérationnel courant d'un run natif : état public, terminalité,
+             propriété du contrôle et disponibilité du plan de transfert suivant.
+             Un run de génération non native rend NOT_APPLICABLE, qui n'est ni une
+             ignorance ni un échec. La disponibilité d'un plan n'affirme ni
+             l'admissibilité d'un pas, ni un quota, ni une intention de
+             production. Structure :
+             docs/specs/run-operational-state-machine.md
+
+  ccr operation-effects --format json
+             Effet d'invocation prospectif des opérations supportées, sous
+             EXACT(n), AT_MOST(n) ou UNKNOWN. Aucun run n'est requis ni accepté :
+             cette surface répond avant qu'un run existe. Un effet dit ce qu'une
+             opération PEUT engager, jamais ce qu'elle engagera, et n'affirme ni
+             admission de quota, ni admissibilité. Structure :
+             docs/specs/operation-invocation-effect-machine.md
 
   ccr invocation-outcomes [<run_id>] [--invocation <invocation_id>]
              [--format json] [--runs-dir <répertoire>]
@@ -728,6 +769,95 @@ async function commandRunActivity(
   }
 
   io.out(serializeRunActivity(await readRunActivity(runPaths(deps.runsDir, runId)), representation));
+  return 0;
+}
+
+/**
+ * `ccr run-invocation-accounting <run_id>` — comptabilité machine (R1).
+ *
+ * Le `run_id` est **obligatoire** : cette surface ne résout aucun run implicite.
+ *
+ * `PROJECTION_FAILURE` est un succès de commande, comme pour F2 : un échec de
+ * projection est un fait rendu, un échec de commande ne rend rien.
+ */
+async function commandRunInvocationAccounting(
+  deps: RunServiceDeps,
+  parsed: ParsedArgs,
+  io: CliIo,
+): Promise<number> {
+  const format = parsed.flags.get('format');
+  if (format !== RUN_INVOCATION_ACCOUNTING_FORMAT) {
+    throw new UsageError(
+      format === undefined
+        ? `L'option --format est obligatoire. Seul « ${RUN_INVOCATION_ACCOUNTING_FORMAT} » est disponible.`
+        : `Format inconnu : ${format}. Seul « ${RUN_INVOCATION_ACCOUNTING_FORMAT} » est disponible.`,
+    );
+  }
+
+  const runId = parsed.positionals[0];
+  if (runId === undefined || runId.length === 0) {
+    throw new UsageError('`ccr run-invocation-accounting` attend un <run_id>.');
+  }
+
+  io.out(serializeRunInvocationAccounting(await readRunInvocationAccounting(deps.runsDir, runId)));
+  return 0;
+}
+
+/**
+ * `ccr run-operational-state <run_id>` — état opérationnel machine (R2).
+ *
+ * Les trois statuts de projection sont des succès de commande. `NOT_APPLICABLE`
+ * est une réponse complète : le run est connu, et la question n'a pas de sens
+ * pour lui.
+ */
+async function commandRunOperationalState(
+  deps: RunServiceDeps,
+  parsed: ParsedArgs,
+  io: CliIo,
+): Promise<number> {
+  const format = parsed.flags.get('format');
+  if (format !== RUN_OPERATIONAL_STATE_FORMAT) {
+    throw new UsageError(
+      format === undefined
+        ? `L'option --format est obligatoire. Seul « ${RUN_OPERATIONAL_STATE_FORMAT} » est disponible.`
+        : `Format inconnu : ${format}. Seul « ${RUN_OPERATIONAL_STATE_FORMAT} » est disponible.`,
+    );
+  }
+
+  const runId = parsed.positionals[0];
+  if (runId === undefined || runId.length === 0) {
+    throw new UsageError('`ccr run-operational-state` attend un <run_id>.');
+  }
+
+  io.out(serializeRunOperationalState(await readRunOperationalState(deps, runId)));
+  return 0;
+}
+
+/**
+ * `ccr operation-effects` — effet d'invocation prospectif (P).
+ *
+ * Portée **opération**, jamais run : aucun `run_id` n'est requis, et un
+ * positionnel est refusé plutôt qu'ignoré. Aucune lecture de run, de politique,
+ * de journal ni d'état n'a lieu — la commande répond avant qu'un run existe.
+ */
+function commandOperationEffects(parsed: ParsedArgs, io: CliIo): number {
+  const format = parsed.flags.get('format');
+  if (format !== OPERATION_INVOCATION_EFFECT_FORMAT) {
+    throw new UsageError(
+      format === undefined
+        ? `L'option --format est obligatoire. Seul « ${OPERATION_INVOCATION_EFFECT_FORMAT} » est disponible.`
+        : `Format inconnu : ${format}. Seul « ${OPERATION_INVOCATION_EFFECT_FORMAT} » est disponible.`,
+    );
+  }
+
+  if (parsed.positionals.length > 0) {
+    throw new UsageError(
+        '`ccr operation-effects` n’accepte aucun argument positionnel : cette surface ' +
+          'est de portée opération, et ne lit aucun run.',
+    );
+  }
+
+  io.out(serializeOperationInvocationEffects());
   return 0;
 }
 
@@ -1884,6 +2014,20 @@ export async function runCli(
         const parsed = parseArgs(rest, commonFlags);
         const deps = overrides.deps ?? (await runCommandDeps(parsed));
         return await commandStatus(deps, parsed, io);
+      }
+      case 'run-invocation-accounting': {
+        const parsed = parseArgs(rest, [...commonFlags, 'format']);
+        const deps = overrides.deps ?? (await runCommandDeps(parsed));
+        return await commandRunInvocationAccounting(deps, parsed, io);
+      }
+      case 'run-operational-state': {
+        const parsed = parseArgs(rest, [...commonFlags, 'format']);
+        const deps = overrides.deps ?? (await runCommandDeps(parsed));
+        return await commandRunOperationalState(deps, parsed, io);
+      }
+      case 'operation-effects': {
+        const parsed = parseArgs(rest, [...commonFlags, 'format']);
+        return commandOperationEffects(parsed, io);
       }
       case 'invocation-outcomes': {
         const parsed = parseArgs(rest, [...commonFlags, 'invocation', 'format']);

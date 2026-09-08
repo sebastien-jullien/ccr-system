@@ -1,9 +1,10 @@
 # CCR — Spécification · Effet d'invocation machine d'une opération
 
 ```text
-STATUT                              cible normative RATIFIÉE PAR L'HUMAIN
-IMPLÉMENTATION                      NON IMPLÉMENTÉE
-PUBLICATION                         NON PUBLIÉE
+STATUT                              contrat RATIFIÉ PAR L'HUMAIN
+IMPLÉMENTATION                      PRÉSENTE DANS LA LIGNE DE BASE SOURCE
+CONFORMITÉ DE CE CONTRAT            ÉTABLIE
+PUBLICATION                         NON PUBLIÉ COMME CONTRAT SUPPORTÉ
 LIGNE DE BASE SUPPORTÉE             AUCUNE À CE JOUR
 PORTÉE                              effet d'invocation prospectif machine public · lecture seule
 CONTRATS SÉMANTIQUES SUPPORTÉS      1
@@ -11,19 +12,24 @@ CONTRATS DE REPRÉSENTATION MACHINE  1
 REPRÉSENTATION PAR DÉFAUT           1
 ```
 
-Ce document définit la structure et la portée du document machine que devra
-produire `ccr operation-effects --format json`.
+Ce document définit la structure et la portée du document machine que produit
+`ccr operation-effects --format json`.
 
 ```text
 AUTORITÉ NORMATIVE   ratifiée par l'humain
-IMPLÉMENTATION       aucune · la commande ci-dessus n'est pas fournie
-                     par la version courante du produit
-SYNTAXE              cible normative ratifiée, non une surface existante
+IMPLÉMENTATION       présente dans la ligne de base source · la version publiée
+                     courante du produit ne fournit pas la commande ci-dessus
+CONFORMITÉ           établie pour CE contrat · elle ne vaut pas vérification
+                     complète du dépôt
+PUBLICATION          aucune · cette surface n'est le contrat public supporté
+                     d'aucune version publiée
 ```
 
-Ce document énonce ce qu'une implémentation conforme devra rendre. Il ne
-constate pas un comportement existant, et n'ajoute aucun contrat à la ligne de
-base supportée d'une version publiée.
+Ce document énonce ce qu'une implémentation conforme rend, et une implémentation
+conforme existe dans la ligne de base source. Il n'ajoute pour autant aucun
+contrat à la ligne de base supportée d'une version publiée : l'entrée dans le
+contrat public supporté appartient à la version de paquet qui publiera cette
+surface. Voir [`compatibility.md`](compatibility.md) § 3.4.
 
 ---
 
