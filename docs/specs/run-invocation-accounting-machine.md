@@ -2,10 +2,13 @@
 
 ```text
 STATUT                              contrat RATIFIÉ PAR L'HUMAIN
+                                    avant la frontière · état 2-bis
+                                    à compter d'elle · contrat courant, état 3
 IMPLÉMENTATION                      PRÉSENTE DANS LA LIGNE DE BASE SOURCE
 CONFORMITÉ DE CE CONTRAT            ÉTABLIE
-PUBLICATION                         NON PUBLIÉ COMME CONTRAT SUPPORTÉ
-LIGNE DE BASE SUPPORTÉE             AUCUNE À CE JOUR
+VERSION DE PUBLICATION PRÉPARÉE     1.3.0
+LIGNE DE BASE SUPPORTÉE             AUCUNE avant la frontière
+                                    v1.3.0 à compter d'elle
 PORTÉE                              comptabilité d'invocation machine publique · lecture seule
 CONTRATS SÉMANTIQUES SUPPORTÉS      1
 CONTRATS DE REPRÉSENTATION MACHINE  1
@@ -16,20 +19,31 @@ Ce document définit la structure et la portée du document machine que produit
 `ccr run-invocation-accounting <run_id> --format json`.
 
 ```text
+FRONTIÈRE DE PUBLICATION
+  =  la présence réussie, sur le remote canonique du dépôt, d'un tag
+     `v1.3.0` qui soit un OBJET DE TAG ANNOTÉ et dont la CIBLE ÉPLUCHÉE
+     soit exactement le commit de préparation v1.3.0 ratifié
+     un tag léger, un tag annoté pointant ailleurs, ou un tag resté local
+     ne la franchissent pas
+     définition intégrale : compatibility.md § 3.4
+
+AVANT LA FRONTIÈRE
+  état 2-bis · aucune version publiée ne fournit la commande ci-dessus ·
+  la version publiée courante est 1.2.0, et elle ne la contient pas
+À COMPTER DE LA FRONTIÈRE
+  état 3 · contrat public supporté · ligne de base supportée v1.3.0
+
 AUTORITÉ NORMATIVE   ratifiée par l'humain
-IMPLÉMENTATION       présente dans la ligne de base source · la version publiée
-                     courante du produit ne fournit pas la commande ci-dessus
+IMPLÉMENTATION       présente dans la ligne de base source
 CONFORMITÉ           établie pour CE contrat · elle ne vaut pas vérification
                      complète du dépôt
-PUBLICATION          aucune · cette surface n'est le contrat public supporté
-                     d'aucune version publiée
 ```
 
 Ce document énonce ce qu'une implémentation conforme rend, et une implémentation
-conforme existe dans la ligne de base source. Il n'ajoute pour autant aucun
-contrat à la ligne de base supportée d'une version publiée : l'entrée dans le
-contrat public supporté appartient à la version de paquet qui publiera cette
-surface. Voir [`compatibility.md`](compatibility.md) § 3.4.
+conforme existe dans la ligne de base source. Son entrée dans le contrat public
+supporté est datée par la frontière ci-dessus, et par elle seule : la présence
+de ce texte dans Git ne la constitue pas.
+Voir [`compatibility.md`](compatibility.md) § 3.4.
 
 ---
 

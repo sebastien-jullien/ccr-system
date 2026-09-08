@@ -169,6 +169,22 @@ ccr run-activity <run_id> --format json    # lecture ; n'écrit rien
 
 `ccr run-activity <run_id> --format json` rend l'**activité procédurale durable** du run — démarrage, passages de témoin natifs et envois humains — sous forme d'activités logiques ordonnées. Un champ `projection_status` discrimine trois issues, toutes en code de sortie `0` : l'histoire complète, une histoire qui ne peut pas être établie, ou une projection qui ne peut pas être produite de façon fiable. Ce n'est pas un transcript : aucun contenu, aucune position et aucun argument n'y figurent. Sa structure et sa sémantique sont définies par [`docs/specs/run-activity-machine.md`](docs/specs/run-activity-machine.md).
 
+**Surfaces machine de comptabilité, d'état et d'effet — v1.3.0**
+
+```bash
+ccr run-invocation-accounting <run_id> --format json   # lecture ; n'écrit rien
+ccr run-operational-state <run_id> --format json       # lecture ; n'écrit rien
+ccr operation-effects --format json                    # lecture ; n'écrit rien
+```
+
+Ces trois surfaces sont **préparées pour la version 1.3.0**. Elles deviennent des contrats publics supportés à compter de la publication canonique du tag annoté `v1.3.0`, et pas avant : tant que cette frontière n'est pas franchie, la version publiée courante est 1.2.0, et elle ne les fournit pas. La règle exacte, et la frontière qui la date, sont énoncées par [`docs/specs/compatibility.md`](docs/specs/compatibility.md) § 3.4.
+
+`ccr run-invocation-accounting <run_id> --format json` rend la **comptabilité d'invocation** du run : la politique de quota, la consommation durable et son attribution par déclencheur. `budget_policy` est une union discriminée — aucune politique, ou une politique et son maximum : absence et zéro y sont opposés. `coverage` dit ce que le compte couvre ; sans journal, la consommation antérieure n'est pas reconstructible, et aucun zéro n'est rendu à sa place. Sa structure et sa sémantique sont définies par [`docs/specs/run-invocation-accounting-machine.md`](docs/specs/run-invocation-accounting-machine.md).
+
+`ccr run-operational-state <run_id> --format json` rend l'**état opérationnel courant** d'un run natif : état public, terminalité, propriété du contrôle et disponibilité du plan de transfert suivant. Un run dont la génération n'est pas native rend `NOT_APPLICABLE`, qui n'est ni une ignorance ni un échec. La disponibilité d'un plan n'affirme ni l'admissibilité d'un pas, ni un quota, ni une intention de production. Sa structure et sa sémantique sont définies par [`docs/specs/run-operational-state-machine.md`](docs/specs/run-operational-state-machine.md).
+
+`ccr operation-effects --format json` rend l'**effet d'invocation prospectif** des opérations supportées, sous `EXACT(n)`, `AT_MOST(n)` ou `UNKNOWN`. Aucun run n'est requis ni accepté : cette surface répond avant qu'un run existe. Un effet dit ce qu'une opération *peut* engager, jamais ce qu'elle engagera, et n'affirme ni admission de quota, ni admissibilité. Sa structure et sa sémantique sont définies par [`docs/specs/operation-invocation-effect-machine.md`](docs/specs/operation-invocation-effect-machine.md).
+
 **Intention de production**
 
 ```bash
@@ -388,6 +404,9 @@ Le contenu produit par un modèle est traité comme non fiable : il est analysé
 | [`docs/specs/invocation-outcome.md`](docs/specs/invocation-outcome.md) | contrat courant de la projection des issues d'invocation |
 | [`docs/specs/invocation-outcome-machine.md`](docs/specs/invocation-outcome-machine.md) | contrat courant de la représentation machine des issues d'invocation |
 | [`docs/specs/run-inventory-machine.md`](docs/specs/run-inventory-machine.md) | contrat courant de l'inventaire machine des runs découvrables |
+| [`docs/specs/run-invocation-accounting-machine.md`](docs/specs/run-invocation-accounting-machine.md) | comptabilité machine des invocations d'un run — contrat supporté à compter de la publication de v1.3.0 |
+| [`docs/specs/run-operational-state-machine.md`](docs/specs/run-operational-state-machine.md) | état opérationnel machine d'un run natif — contrat supporté à compter de la publication de v1.3.0 |
+| [`docs/specs/operation-invocation-effect-machine.md`](docs/specs/operation-invocation-effect-machine.md) | effet d'invocation machine d'une opération — contrat supporté à compter de la publication de v1.3.0 |
 | [`docs/specs/compatibility.md`](docs/specs/compatibility.md) | contrat courant de compatibilité des versions du paquet, à partir de v1.0.0 |
 | [`docs/design-foundations.md`](docs/design-foundations.md) | les principes de conception dont CCR part |
 | [`docs/design-history.md`](docs/design-history.md) | histoire intellectuelle rétrospective de CCR |

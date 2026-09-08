@@ -228,7 +228,7 @@ sens et ses frontières inchangés. `docs/specs/run-activity-machine.md` demeure
 l'autorité de sa propre surface : l'évolution de ses axes de version propres lui
 appartient, et relève du § 6 et du § 8, non de la présente énumération.
 
-**Contrats ratifiés après v1.2.0 — IMPLÉMENTÉS EN LIGNE DE BASE SOURCE, NON PUBLIÉS**
+**Contrats ajoutés par v1.3.0 — publication sous frontière**
 
 ```text
 docs/specs/run-invocation-accounting-machine.md
@@ -240,17 +240,98 @@ docs/specs/operation-invocation-effect-machine.md
 AUTORITÉ NORMATIVE                      RATIFIÉE PAR L'HUMAIN
 IMPLÉMENTATION                          PRÉSENTE DANS LA LIGNE DE BASE SOURCE
 CONFORMITÉ DE CES TROIS CONTRATS        ÉTABLIE
-PUBLICATION                             AUCUNE
-APPARTENANCE À UNE LIGNE DE BASE
-  SUPPORTÉE PUBLIÉE                     AUCUNE
+VERSION DE PUBLICATION PRÉPARÉE         1.3.0
+CONTRATS DESTINÉS AU JEU PUBLIC
+  SUPPORTÉ DE v1.3.0, À COMPTER
+  DE LA FRONTIÈRE                       comptabilité machine des invocations
+                                        état opérationnel machine natif
+                                        effet d'invocation machine d'une opération
+CHANGEMENT DE COMPATIBILITÉ             additif
 CONTRATS SUPPORTÉS EXISTANTS            INCHANGÉS
-JEU DE CONTRATS SUPPORTÉS DE v1.2.0     INCHANGÉ
+JEUX DE CONTRATS SUPPORTÉS DE
+  v1.0.0 · v1.1.0 · v1.2.0              INCHANGÉS
 APPARTENANCE À LA LIGNE DE BASE DE v1.0.0   inchangée
 ```
 
-La version publiée courante du paquet — **1.2.0** — ne fournit aucune des trois
-commandes. Une implémentation conforme existe dans la ligne de base source ;
-aucune version publiée ne la contient.
+### La frontière, et elle seule
+
+Une version de paquet publie ; un document ne se publie pas lui-même. La
+frontière est donc nommée ici une fois, en termes mécaniquement vérifiables :
+
+```text
+FRONTIÈRE DE PUBLICATION DE v1.3.0
+  =  LA PRÉSENCE RÉUSSIE, SUR LE REMOTE CANONIQUE DU DÉPÔT,
+     D'UN TAG NOMMÉ `v1.3.0` QUI SOIT
+       a)  UN OBJET DE TAG ANNOTÉ, ET
+       b)  DONT LA CIBLE ÉPLUCHÉE SOIT EXACTEMENT LE COMMIT DE
+           PRÉPARATION v1.3.0 RATIFIÉ QUI PORTE CETTE DÉCLARATION
+```
+
+Les deux conditions se vérifient à la main, séparément :
+
+```text
+refs/tags/v1.3.0        doit être un OBJET DE TAG annoté,
+                        et non le commit lui-même
+refs/tags/v1.3.0^{}     doit être EXACTEMENT le commit de préparation
+                        v1.3.0 ratifié
+```
+
+L'objet de tag et sa cible épluchée sont deux identités distinctes, et la
+frontière les exige toutes les deux. Aucune empreinte de commit n'est inscrite
+ici : ce commit n'existe pas encore au moment où ces lignes sont préparées.
+L'identité visée est donc désignée par sa qualité — *le commit de préparation
+ratifié qui porte cette déclaration* — et devient mécaniquement vérifiable dès
+qu'il est créé.
+
+Trois cas ne franchissent **pas** la frontière, et c'est délibéré :
+
+```text
+tag `v1.3.0` LÉGER, même sur le bon commit      →  FRONTIÈRE NON FRANCHIE
+tag `v1.3.0` ANNOTÉ pointant sur un autre commit →  FRONTIÈRE NON FRANCHIE
+tag `v1.3.0` annoté et exact, mais LOCAL SEULEMENT →  FRONTIÈRE NON FRANCHIE
+```
+
+Ni la présente section, ni le commit qui la porte, ni le champ `version` de
+`package.json` ne franchissent cette frontière : ils la **préparent**. Toute
+occurrence de « avant la frontière » et « à compter de la frontière » dans ce
+document et dans les trois spécifications désigne exactement celle-là, avec ses
+deux conditions.
+
+```text
+AVANT LA FRONTIÈRE
+  R1 · R2 · P                    ÉTAT 2-BIS
+  LIGNE DE BASE SUPPORTÉE        AUCUNE
+  VERSION PUBLIÉE COURANTE       1.2.0
+    et elle ne fournit aucune des trois commandes
+
+À COMPTER DE LA FRONTIÈRE
+  R1 · R2 · P                    ÉTAT 3 · contrats publics supportés
+  LIGNE DE BASE SUPPORTÉE        v1.3.0
+  VERSION PUBLIÉE COURANTE       v1.3.0
+```
+
+Ces trois documents deviennent des contrats publics supportés **à compter de**
+cette frontière, et pas avant. Ils ne rejoignent **pas** la ligne de base de
+v1.0.0, qui reste historiquement fixée à ses huit documents. Les jeux de
+contrats supportés de v1.0.0, v1.1.0 et v1.2.0 restent ce qu'ils étaient : en
+particulier, **v1.2.0 ne contient aucun des trois**.
+
+### Release qualifiée — ce que l'autorité humaine a accepté
+
+La décision de publier v1.3.0 a été prise en connaissance de l'état de
+vérification, et cet état est enregistré ici tel qu'il est :
+
+```text
+SUITE CANONIQUE D'INTÉGRATION           ROUGE ET INSTABLE
+VÉRIFICATION COMPLÈTE DU DÉPÔT          NON
+IDENTITÉ D'ÉCHEC D'INTÉGRATION
+  PROPRE À CES TROIS CONTRATS           AUCUNE ÉTABLIE
+    au sens du protocole différentiel prédéclaré, par identité
+```
+
+Publier n'efface aucun de ces trois faits, et n'en requalifie aucun. Ce que
+l'autorité humaine a accepté est une publication dans cet état, non un état
+différent de celui-ci.
 
 **Portée exacte de « conformité établie ».** Elle porte sur ces trois contrats,
 et sur eux seuls :
@@ -319,16 +400,18 @@ ORDRE   1  <  2  <  2-bis  <  3
 ```
 
 ```text
-R1 · R2 · P   =  ÉTAT 2-BIS
+R1 · R2 · P   =  ÉTAT 2-BIS   avant la frontière de publication de v1.3.0
+              =  ÉTAT 3       à compter de cette frontière
 ```
 
-Ils ne sont **pas** en état 3, et rien dans ce document ne doit se lire comme
-tel. Le passage de 2-bis à 3 est un acte distinct — la version de paquet qui les
-publie, énoncée ici à ce moment-là.
+Tant que la frontière n'est pas franchie, ils ne sont **pas** en état 3, et rien
+dans ce document ne doit se lire comme tel. Le passage de 2-bis à 3 n'est pas un
+effet du présent texte : il est daté par la frontière définie au § 3.4, et par
+elle seule.
 
 ```text
 ENTRÉE DU CODE DANS LA LIGNE DE BASE SOURCE   =  2  →  2-bis
-PUBLICATION PAR UNE VERSION DE PAQUET         =  2-bis  →  3
+FRANCHISSEMENT DE LA FRONTIÈRE DE PUBLICATION =  2-bis  →  3
 ```
 
 **Repère non ratifié.** Le nom et le repère `2-bis` de cet état intermédiaire
@@ -352,19 +435,21 @@ conformes ne vient pas de leur ratification, mais d'actes distincts et
 postérieurs.
 
 Les commandes que ces documents décrivent — `ccr run-invocation-accounting`,
-`ccr run-operational-state`, `ccr operation-effects` — ne sont **pas** fournies
-par la version publiée courante du produit. Leur syntaxe est implémentée dans la
-ligne de base source, et n'est pour autant le contrat public supporté d'aucune
-version publiée.
+`ccr run-operational-state`, `ccr operation-effects` — sont implémentées dans la
+ligne de base source. Avant la frontière de publication de v1.3.0, elles ne sont
+fournies par aucune version publiée du produit, et ne sont le contrat public
+supporté d'aucune ; c'est cette frontière, et non leur présence dans le dépôt,
+qui les y fait entrer.
 
 ```text
 SURFACE IMPLÉMENTÉE EN LIGNE DE BASE SOURCE
   ≠  CONTRAT PUBLIC SUPPORTÉ PUBLIÉ
 ```
 
-Un consommateur ne peut donc s'appuyer sur aucun des trois aujourd'hui. Ils
-n'entreront dans le contrat public supporté qu'à la version de paquet qui les
-publie, et cette entrée sera énoncée ici à ce moment-là.
+Tant que la frontière n'est pas franchie, un consommateur ne peut donc s'appuyer
+sur aucun des trois : ils n'entrent dans le contrat public supporté qu'à compter
+d'elle, et la présente section l'énonce d'avance plutôt que de le constater
+après coup.
 
 Ce qui vaut du code vaut du document : la présence de ces spécifications dans
 Git depuis leur ratification n'a jamais valu publication de contrat, et leur
