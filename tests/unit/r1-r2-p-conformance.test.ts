@@ -44,11 +44,17 @@ import type { InvocationTriggerKind } from '../../src/core/usage-governance.ts';
 import { EXPERT_SLOT_IDS } from '../../src/core/expert.ts';
 import {
   COCKPIT_OPERATION_IDS,
-  NATIVE_OPERATION_SERVICE,
+  MODEL_ASSISTED_OPERATION_IDS,
+  MODEL_ASSISTED_OPERATION_SERVICE,
+  modelAssistedProviderProducingOperations,
   operationEffect,
-  providerProducingOperations,
 } from '../../src/services/invocation-effect.ts';
+import type { OperationId } from '../../src/services/invocation-effect.ts';
 import { materializeNativeRun, materializeRun } from '../helpers/run-fixture.ts';
+import {
+  observeModelAssistedEngagement,
+  observeNativeEngagement,
+} from '../helpers/engagement-probe.ts';
 import { isRunDiscoverable } from '../../src/services/run-existence.ts';
 import { readRunOperationalState } from '../../src/services/run-operational-state-read.ts';
 import { isCcrError } from '../../src/core/errors.ts';
@@ -831,40 +837,466 @@ test('P-04 · anti-dérive NUMÉRIQUE entre cardinalité publiée et cardinalit�
     'la cardinalité publiée de START doit égaler le nombre de créneaux que START peut lancer',
   );
 
-  // Second verrou, celui qui attrape un changement d'exécution : pour chaque
-  // opération qui peut appeler un fournisseur, le nombre de SITES d'engagement
-  // de son service doit correspondre à la cardinalité publiée.
+  // Second verrou, celui qui attrape un changement d'EXÉCUTION.
   //
-  //   STEP · SEND   un site  → EXACT(1)
-  //   START         un site, exécuté PAR CRÉNEAU → AT_MOST(EXPERT_SLOT_IDS.length)
+  // Il ne compte PAS les contrôles de quota : un quota se vérifie AVANT
+  // l'engagement, peut refuser sans que rien ne soit engagé, et n'interdirait
+  // pas à un chemin d'engager deux fois après un unique contrôle.
   //
-  // Un second site d'engagement ajouté à STEP porterait le compte à 2, et cette
-  // assertion échouerait contre EXACT(1). Un site ajouté à START porterait sa
-  // cardinalité réelle à 2 × créneaux, et l'assertion échouerait de même.
-  const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
-  const servicesDir = path.resolve(here, '..', '..', 'src', 'services');
-  const perOperationSlotMultiplicity: Readonly<Record<string, number>> = {
-    START: EXPERT_SLOT_IDS.length,
-  };
-
-  for (const operation of providerProducingOperations()) {
-    const source = await readFile(path.join(servicesDir, NATIVE_OPERATION_SERVICE[operation]), 'utf8');
-    const callSites = source
-      .split('\n')
-      .filter((line) => line.includes('assertInvocationQuotaAvailable(') && !line.trimStart().startsWith('import'))
-      .length;
-    assert.equal(callSites > 0, true, `${operation} doit porter au moins un site d'engagement`);
-
+  //   CONTRÔLE DE QUOTA   ≠   ENGAGEMENT DURABLE D'INVOCATION
+  //
+  // Ce qui est mesuré est la frontière d'engagement elle-même — la ligne
+  // `DISPATCH_COMMITTED` écrite au journal d'invocations — en exécutant
+  // réellement chaque opération native contre un adaptateur de test.
+  //
+  //   STEP · SEND       EXACT(1)     un engagement, mesuré
+  //   PAUSE · RESUME    EXACT(0)     aucun engagement, mesuré
+  //   START             AT_MOST(2)   borne respectée, ET atteinte par le chemin
+  //                                  nominal à deux créneaux
+  for (const operation of ['START', 'STEP', 'SEND', 'PAUSE', 'RESUME'] as const) {
     const effect = operationEffect(operation).invocation_effect;
     assert.notEqual(effect.kind, 'UNKNOWN', `${operation} publie une cardinalité finie`);
     const published = effect.kind === 'UNKNOWN' ? -1 : effect.count;
-    const multiplicity = perOperationSlotMultiplicity[operation] ?? 1;
+
+    const observed = await observeNativeEngagement(operation);
+    assert.equal(observed.threw, false, `${operation} · le chemin nominal aboutit`);
+
+    if (effect.kind === 'EXACT') {
+      assert.equal(
+        observed.ledgerEngagements,
+        published,
+        `dérive sur ${operation} : ${String(observed.ledgerEngagements)} engagement(s) durable(s) ` +
+          `≠ cardinalité publiée EXACT(${String(published)})`,
+      );
+    } else {
+      assert.equal(
+        observed.ledgerEngagements <= published,
+        true,
+        `${operation} · la borne publiée doit majorer l'exécution`,
+      );
+      // Et la borne est SERRÉE, non prudente : le chemin nominal l'atteint.
+      // Une borne relevée sans que l'exécution suive échouerait ici.
+      assert.equal(
+        observed.ledgerEngagements,
+        published,
+        `${operation} · le chemin nominal doit atteindre la borne publiée`,
+      );
+    }
+  }
+});
+
+test('P-04bis · l’invariant natif ÉCHOUE sous mutation — sensibilité démontrée', async () => {
+  // Sonde de mutation exécutée sur les opérations natives qui engagent :
+  // même contrôle de quota, un engagement durable de plus.
+  for (const operation of ['START', 'STEP', 'SEND'] as const) {
+    const effect = operationEffect(operation).invocation_effect;
+    const published = effect.kind === 'UNKNOWN' ? -1 : effect.count;
+
+    const mutated = await observeNativeEngagement(operation, { injectExtraEngagement: 1 });
     assert.equal(
+      mutated.ledgerEngagements > published,
+      true,
+      `${operation} · sous mutation, la cardinalité réelle DÉPASSE la cardinalité publiée — ` +
+        'c’est exactement ce que P-04 doit détecter',
+    );
+  }
+
+  // PAUSE et RESUME n'ont pas de couture de journal, et n'en ont pas besoin :
+  // leur cardinalité publiée est EXACT(0), qu'un seul engagement suffirait à
+  // falsifier. La sensibilité y est structurelle.
+  for (const operation of ['PAUSE', 'RESUME'] as const) {
+    const effect = operationEffect(operation).invocation_effect;
+    assert.deepEqual(effect, { kind: 'EXACT', count: 0 }, `${operation} · aucune tolérance`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// P-REP2 — représentation machine 2 · autorité `ba60b73`
+//
+// Trois opérations manquaient au document : `DETECT`, `PROPOSE`,
+// `ADDUCE_MODEL`. Elles entrent par une NOUVELLE REPRÉSENTATION, jamais par une
+// montée de sens : le contrat sémantique reste en 1, et l'appel historique
+// continue de rendre ses six entrées.
+// ---------------------------------------------------------------------------
+
+const REP1_OPERATIONS: readonly string[] = ['START', 'STEP', 'SEND', 'PAUSE', 'RESUME', 'HANDOFF'];
+const REP2_OPERATIONS: readonly string[] = [...REP1_OPERATIONS, 'DETECT', 'PROPOSE', 'ADDUCE_MODEL'];
+
+/** Valeurs historiques de la représentation 1, littérales et non dérivées. */
+const REP1_EXPECTED: Readonly<Record<string, { provider: string; effect: unknown }>> = {
+  START: { provider: 'YES', effect: { kind: 'AT_MOST', count: 2 } },
+  STEP: { provider: 'YES', effect: { kind: 'EXACT', count: 1 } },
+  SEND: { provider: 'YES', effect: { kind: 'EXACT', count: 1 } },
+  PAUSE: { provider: 'NO', effect: { kind: 'EXACT', count: 0 } },
+  RESUME: { provider: 'NO', effect: { kind: 'EXACT', count: 0 } },
+  HANDOFF: { provider: 'NOT_AVAILABLE', effect: { kind: 'UNKNOWN' } },
+};
+
+/**
+ * Littéraux qui appartiennent au vocabulaire de DÉCLENCHEURS de R1, et à lui
+ * seul. Une identité d'opération de P n'en est jamais une copie.
+ */
+const R1_TRIGGER_ONLY_LITERALS: readonly string[] = [
+  'CONTROVERSY_DETECTION',
+  'EVIDENCE_ADDUCTION',
+  'RECONCILIATION_PROPOSAL',
+  'RECOVERY_CONTINUE',
+];
+
+function servicesDirectory(): string {
+  const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+  return path.resolve(here, '..', '..', 'src', 'services');
+}
+
+async function effectsDocument(
+  h: Harness,
+  selector?: string,
+): Promise<{ code: number; out: string; doc: Record<string, unknown> }> {
+  const argv = ['operation-effects', '--format', 'json'];
+  if (selector !== undefined) argv.push('--machine-representation-version', selector);
+  const r = await cli(h, argv);
+  return { code: r.code, out: r.out, doc: r.code === 0 ? (JSON.parse(r.out) as Record<string, unknown>) : {} };
+}
+
+function operationNames(doc: Record<string, unknown>): readonly string[] {
+  return (doc['operations'] as readonly Record<string, unknown>[]).map((e) => String(e['operation']));
+}
+
+function entryOf(doc: Record<string, unknown>, operation: string): Record<string, unknown> | undefined {
+  return (doc['operations'] as readonly Record<string, unknown>[]).find(
+    (e) => e['operation'] === operation,
+  );
+}
+
+test('P-REP2-T1 · sans sélecteur, la représentation 1 rend exactement ses six entrées', async () => {
+  const h = await harness();
+  try {
+    const { code, doc } = await effectsDocument(h);
+    assert.equal(code, 0);
+    assert.equal(doc['operation_invocation_effect_contract_version'], 1, 'le sens ne monte pas');
+    assert.equal(doc['operation_invocation_effect_machine_representation_version'], 1);
+
+    const names = operationNames(doc);
+    assert.equal(names.length, 6, 'six entrées, pas neuf');
+    assert.deepEqual([...names].sort(), [...REP1_OPERATIONS].sort());
+    for (const [operation, want] of Object.entries(REP1_EXPECTED)) {
+      const entry = entryOf(doc, operation);
+      assert.equal(entry?.['may_call_provider'], want.provider, `${operation} · appel fournisseur`);
+      assert.deepEqual(entry?.['invocation_effect'], want.effect, `${operation} · effet`);
+    }
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('P-REP2-T2 · le sélecteur 1 rend le même document que l’appel historique', async () => {
+  const h = await harness();
+  try {
+    const historical = await effectsDocument(h);
+    const explicit = await effectsDocument(h, '1');
+    assert.equal(explicit.code, 0);
+    assert.deepEqual(explicit.doc, historical.doc, 'demander 1 ne change rien');
+    assert.equal(explicit.out, historical.out, 'jusqu’à la sérialisation');
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('P-REP2-T3 · le sélecteur 2 rend neuf entrées denses, sans monter le contrat sémantique', async () => {
+  const h = await harness();
+  try {
+    const { code, doc } = await effectsDocument(h, '2');
+    assert.equal(code, 0);
+    assert.equal(doc['operation_invocation_effect_contract_version'], 1, 'le sens reste en 1');
+    assert.equal(doc['operation_invocation_effect_machine_representation_version'], 2);
+
+    const names = operationNames(doc);
+    assert.equal(names.length, 9, 'neuf entrées');
+    assert.equal(new Set(names).size, 9, 'aucun doublon');
+    assert.deepEqual([...names].sort(), [...REP2_OPERATIONS].sort(), 'aucune omission, aucune entrée étrangère');
+
+    // Les six héritées sont identiques, jusqu'au jeton.
+    for (const [operation, want] of Object.entries(REP1_EXPECTED)) {
+      const entry = entryOf(doc, operation);
+      assert.equal(entry?.['may_call_provider'], want.provider, `${operation} · hérité inchangé`);
+      assert.deepEqual(entry?.['invocation_effect'], want.effect, `${operation} · hérité inchangé`);
+    }
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('P-REP2-T4-T6 · DETECT, PROPOSE et ADDUCE_MODEL publient YES / EXACT(1)', async () => {
+  const h = await harness();
+  try {
+    const { doc } = await effectsDocument(h, '2');
+    for (const operation of ['DETECT', 'PROPOSE', 'ADDUCE_MODEL']) {
+      const entry = entryOf(doc, operation);
+      assert.equal(entry?.['may_call_provider'], 'YES', `${operation} · peut appeler un fournisseur`);
+      assert.deepEqual(
+        entry?.['invocation_effect'],
+        { kind: 'EXACT', count: 1 },
+        `${operation} · un engagement, et un seul, sur le chemin gouverné`,
+      );
+      // Ni affaibli en AT_MOST(1), ni remplacé par UNKNOWN.
+      assert.notDeepEqual(entry?.['invocation_effect'], { kind: 'AT_MOST', count: 1 });
+      assert.notDeepEqual(entry?.['invocation_effect'], { kind: 'UNKNOWN' });
+    }
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('P-REP2-T7 · HANDOFF reste NOT_AVAILABLE / UNKNOWN dans les deux représentations', async () => {
+  const h = await harness();
+  try {
+    for (const selector of [undefined, '1', '2']) {
+      const { doc } = await effectsDocument(h, selector);
+      assert.deepEqual(
+        entryOf(doc, 'HANDOFF'),
+        { operation: 'HANDOFF', may_call_provider: 'NOT_AVAILABLE', invocation_effect: { kind: 'UNKNOWN' } },
+        `HANDOFF · sélecteur ${String(selector)}`,
+      );
+      // Aucun chiffre n'accompagne une indétermination faisant autorité.
+      assert.equal('count' in (entryOf(doc, 'HANDOFF')?.['invocation_effect'] as object), false);
+    }
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('P-REP2-T8 · une valeur de sélecteur non supportée sort en 2, sans document', async () => {
+  const h = await harness();
+  try {
+    for (const bad of ['0', '3', '12', 'x', '1.5', '-1', '']) {
+      const r = await cli(h, [
+        'operation-effects',
+        '--format',
+        'json',
+        '--machine-representation-version',
+        bad,
+      ]);
+      assert.equal(r.code, 2, `sélecteur « ${bad} » · défaut d'usage`);
+      assert.equal(r.out, '', `sélecteur « ${bad} » · aucun document sur stdout`);
+    }
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('P-REP2-T9 · aucune entrée de reprise n’apparaît, dans aucune représentation', async () => {
+  const h = await harness();
+  try {
+    for (const selector of [undefined, '1', '2']) {
+      const { out, doc } = await effectsDocument(h, selector);
+      for (const name of operationNames(doc)) {
+        assert.equal(/RECOVER/.test(name), false, `${name} · la reprise reste différée`);
+      }
+      assert.equal(out.includes('RECOVERY_CONTINUE'), false);
+    }
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('P-REP2-T10 · aucune identité de déclencheur R1 ne sert d’identité d’opération P', async () => {
+  const h = await harness();
+  try {
+    const { doc, out } = await effectsDocument(h, '2');
+    const names = new Set(operationNames(doc));
+    for (const literal of R1_TRIGGER_ONLY_LITERALS) {
+      assert.equal(names.has(literal), false, `${literal} appartient au vocabulaire de déclencheurs`);
+      assert.equal(out.includes(literal), false, `${literal} ne traverse pas la surface P`);
+    }
+    // Et la frontière tient dans l'autre sens : ces littéraux restent bien au
+    // vocabulaire de déclencheurs de R1, que P n'emprunte pas.
+    for (const literal of R1_TRIGGER_ONLY_LITERALS) {
+      assert.equal(
+        (INVOCATION_TRIGGER_KINDS as readonly string[]).includes(literal),
+        true,
+        `${literal} est un déclencheur R1`,
+      );
+    }
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('P-REP2-T11 · l’existence de la représentation 2 ne fait monter personne en silence', async () => {
+  const h = await harness();
+  try {
+    const historical = await effectsDocument(h);
+    assert.equal(historical.doc['operation_invocation_effect_machine_representation_version'], 1);
+    assert.equal(operationNames(historical.doc).length, 6);
+    for (const forbidden of ['DETECT', 'PROPOSE', 'ADDUCE_MODEL']) {
+      assert.equal(
+        historical.out.includes(forbidden),
+        false,
+        `${forbidden} n'atteint pas un consommateur qui n'a rien demandé`,
+      );
+    }
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('P-REP2-T12 · la représentation 2 reste statique, sans run et sans état', async () => {
+  const h = await harness();
+  try {
+    // Aucun run n'existe dans ce harness, et la surface répond quand même.
+    const ok = await effectsDocument(h, '2');
+    assert.equal(ok.code, 0, 'aucun run n’est requis');
+    assert.equal(operationNames(ok.doc).length, 9);
+
+    const refused = await cli(h, [
+      'operation-effects',
+      '--format',
+      'json',
+      '--machine-representation-version',
+      '2',
+      RUN,
+    ]);
+    assert.equal(refused.code, 2, 'un run_id est refusé, jamais ignoré');
+    assert.equal(refused.out, '', 'aucun document sur stdout en cas d’erreur d’usage');
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('P-REP2-T13 · la représentation 2 projette la primitive canonique, sans table recopiée', async () => {
+  const h = await harness();
+  try {
+    const { doc } = await effectsDocument(h, '2');
+    for (const entry of doc['operations'] as readonly Record<string, unknown>[]) {
+      const canonical = operationEffect(entry['operation'] as OperationId);
+      assert.equal(entry['may_call_provider'], canonical.may_call_provider);
+      assert.deepEqual(
+        entry['invocation_effect'],
+        canonical.invocation_effect.kind === 'UNKNOWN'
+          ? { kind: 'UNKNOWN' }
+          : { kind: canonical.invocation_effect.kind, count: canonical.invocation_effect.count },
+        `${String(entry['operation'])} projette la primitive`,
+      );
+    }
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('P-REP2-T14 · anti-dérive mesurée à la FRONTIÈRE D’ENGAGEMENT DURABLE, à l’exécution', async () => {
+  // P § 9.2, option B — invariant mécanique.
+  //
+  // Ce qui est mesuré n'est PAS un contrôle de quota :
+  //
+  //   CONTRÔLE DE QUOTA   ≠   ENGAGEMENT DURABLE D'INVOCATION
+  //
+  // Un quota se vérifie AVANT l'engagement, et rien n'interdirait à un chemin
+  // d'engager deux fois après un unique contrôle. La frontière d'engagement est
+  // exactement `InvocationLedgerStore.append()`, qui écrit une ligne
+  // `DISPATCH_COMMITTED` durable — et c'est elle que cette preuve observe, en
+  // exécutant réellement l'opération contre un adaptateur de test.
+  //
+  // Deux mesures indépendantes : les franchissements observés par la couture, et
+  // les lignes relues du journal du run après coup.
+  const declared = modelAssistedProviderProducingOperations();
+  assert.deepEqual([...declared].sort(), ['ADDUCE_MODEL', 'DETECT', 'PROPOSE']);
+
+  for (const operation of declared) {
+    const effect = operationEffect(operation).invocation_effect;
+    const published = effect.kind === 'UNKNOWN' ? -1 : effect.count;
+    assert.equal(effect.kind, 'EXACT', `${operation} publie une cardinalité exacte`);
+
+    const observed = await observeModelAssistedEngagement(operation);
+    assert.equal(observed.threw, false, `${operation} · le chemin nominal aboutit`);
+    assert.equal(observed.providerCalls, 1, `${operation} · un appel, jamais deux`);
+    assert.equal(
+      observed.appends,
       published,
-      callSites * multiplicity,
-      `dérive numérique sur ${operation} : ${String(callSites)} site(s) × ${String(multiplicity)} ` +
+      `dérive sur ${operation} : ${String(observed.appends)} engagement(s) franchi(s) ` +
         `≠ cardinalité publiée ${String(published)}`,
     );
+    assert.equal(
+      observed.ledgerEngagements,
+      published,
+      `dérive sur ${operation} : ${String(observed.ledgerEngagements)} ligne(s) au journal ` +
+        `≠ cardinalité publiée ${String(published)}`,
+    );
+  }
+});
+
+test('P-REP2-T14bis · l’invariant ÉCHOUE sous mutation — sensibilité démontrée', async () => {
+  // Sonde de mutation, exécutée : le contrôle de quota reste unique, et un
+  // SECOND engagement durable est franchi sur le même chemin. Aucun code de
+  // production n'est touché — la couture injecte le franchissement.
+  //
+  //   MUTATION A   même site de quota + second engagement durable
+  //   MUTATION B   effet publié EXACT(1) + chemin engageant deux fois
+  //
+  // Les deux se manifestent de la même façon : la cardinalité réelle change.
+  // Si cette assertion cessait de tenir, c'est l'invariant de T14 qui aurait
+  // cessé d'être sensible.
+  for (const operation of modelAssistedProviderProducingOperations()) {
+    const effect = operationEffect(operation).invocation_effect;
+    const published = effect.kind === 'UNKNOWN' ? -1 : effect.count;
+
+    const mutated = await observeModelAssistedEngagement(operation, { injectExtraEngagement: 1 });
+    assert.equal(mutated.appends, published + 1, `${operation} · un engagement de plus a été franchi`);
+    assert.equal(
+      mutated.ledgerEngagements,
+      published + 1,
+      `${operation} · le journal porte l'engagement supplémentaire`,
+    );
+    assert.notEqual(
+      mutated.ledgerEngagements,
+      published,
+      `${operation} · sous mutation, la cardinalité réelle DIVERGE de la cardinalité publiée — ` +
+        'c’est exactement ce que T14 doit détecter',
+    );
+  }
+});
+
+test('P-REP2-T14ter · les trois services de domaine restent hors du balayage natif', async () => {
+  // La garde anti-dérive du cockpit balaie les `native-*-service.ts`. Ces trois
+  // services n'en sont pas, et c'est ce qui garde les deux gardes disjointes :
+  // étendre P n'a pas élargi le vocabulaire du cockpit.
+  const servicesDir = servicesDirectory();
+  for (const operation of modelAssistedProviderProducingOperations()) {
+    const file = MODEL_ASSISTED_OPERATION_SERVICE[operation];
+    assert.equal(
+      /^native-.*-service\.ts$/.test(file),
+      false,
+      `${operation} appartient à son domaine, pas au moteur natif`,
+    );
+    // Le fichier déclaré existe, et porte bien la frontière d'engagement.
+    const source = await readFile(path.join(servicesDir, file), 'utf8');
+    assert.equal(
+      source.includes('openInvocationLedger'),
+      true,
+      `${operation} · le service déclaré porte la frontière d'engagement`,
+    );
+  }
+});
+
+test('P-REP2-T15 · le vocabulaire de la représentation 2 est figé, jamais énuméré du produit', async () => {
+  const h = await harness();
+  try {
+    const { doc } = await effectsDocument(h, '2');
+    // Le document ne suit pas le vocabulaire courant de la primitive : il suit
+    // une liste ratifiée. Les deux coïncident aujourd'hui, et c'est ce que cette
+    // assertion enregistre — une opération ajoutée demain à la primitive sans
+    // évolution de représentation ferait échouer T3, jamais passer T15.
+    assert.deepEqual(
+      [...operationNames(doc)].sort(),
+      [...REP2_OPERATIONS].sort(),
+      'la représentation 2 rend la liste ratifiée, et elle seule',
+    );
+    assert.deepEqual(
+      [...COCKPIT_OPERATION_IDS, ...MODEL_ASSISTED_OPERATION_IDS].sort(),
+      [...REP2_OPERATIONS].sort(),
+      'aucune opération connue de la primitive ne reste hors de la liste ratifiée',
+    );
+  } finally {
+    await h.dispose();
   }
 });
 

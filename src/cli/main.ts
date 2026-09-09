@@ -81,9 +81,13 @@ import {
   serializeRunOperationalState,
 } from './run-operational-state-machine.ts';
 import {
+  DEFAULT_OPERATION_INVOCATION_EFFECT_MACHINE_REPRESENTATION_VERSION,
+  isOperationInvocationEffectMachineRepresentationVersion,
   OPERATION_INVOCATION_EFFECT_FORMAT,
+  OPERATION_INVOCATION_EFFECT_MACHINE_REPRESENTATION_VERSIONS,
   serializeOperationInvocationEffects,
 } from './operation-invocation-effect-machine.ts';
+import type { OperationInvocationEffectMachineRepresentationVersion } from './operation-invocation-effect-machine.ts';
 import { endNativeProduction, reactivateNativeProduction } from '../services/native-production-service.ts';
 import {
   isNativeRecoveryDomain,
@@ -199,11 +203,17 @@ Usage :
              docs/specs/run-operational-state-machine.md
 
   ccr operation-effects --format json
+             [--machine-representation-version <entier>]
              Effet d'invocation prospectif des opérations supportées, sous
              EXACT(n), AT_MOST(n) ou UNKNOWN. Aucun run n'est requis ni accepté :
              cette surface répond avant qu'un run existe. Un effet dit ce qu'une
              opération PEUT engager, jamais ce qu'elle engagera, et n'affirme ni
-             admission de quota, ni admissibilité. Structure :
+             admission de quota, ni admissibilité.
+             « --machine-representation-version » sélectionne la représentation
+             machine, dimension distincte de « --format ». Absent, ou 1, rend la
+             représentation 1 à l'identique — les six mêmes opérations ; 2 y
+             ajoute DETECT, PROPOSE et ADDUCE_MODEL. Aucune montée implicite.
+             Une valeur non supportée sort en 2, sans document. Structure :
              docs/specs/operation-invocation-effect-machine.md
 
   ccr invocation-outcomes [<run_id>] [--invocation <invocation_id>]
@@ -850,6 +860,10 @@ function commandOperationEffects(parsed: ParsedArgs, io: CliIo): number {
     );
   }
 
+  const representation = parseOperationEffectsRepresentation(
+    parsed.flags.get('machine-representation-version'),
+  );
+
   if (parsed.positionals.length > 0) {
     throw new UsageError(
         '`ccr operation-effects` n’accepte aucun argument positionnel : cette surface ' +
@@ -857,8 +871,38 @@ function commandOperationEffects(parsed: ParsedArgs, io: CliIo): number {
     );
   }
 
-  io.out(serializeOperationInvocationEffects());
+  io.out(serializeOperationInvocationEffects(representation));
   return 0;
+}
+
+/**
+ * Représentation machine demandée pour `ccr operation-effects`.
+ *
+ * Même discipline que pour `ccr run-activity`, et pour le même motif : le
+ * sélecteur absent rend la représentation historique, et jamais autre chose.
+ * Une montée par défaut ferait changer de document un consommateur qui n'a rien
+ * demandé, et lui rendrait neuf entrées là où son contrat en promet six.
+ *
+ * Une valeur non supportée est refusée **avant** toute projection, exactement
+ * comme un format inconnu : sortie 2, et aucune charge utile JSON.
+ */
+function parseOperationEffectsRepresentation(
+  value: string | undefined,
+): OperationInvocationEffectMachineRepresentationVersion {
+  if (value === undefined) return DEFAULT_OPERATION_INVOCATION_EFFECT_MACHINE_REPRESENTATION_VERSION;
+  const supported = OPERATION_INVOCATION_EFFECT_MACHINE_REPRESENTATION_VERSIONS.join(' · ');
+  if (!/^[0-9]+$/.test(value)) {
+    throw new UsageError(
+      `--machine-representation-version attend un entier : ${value}. Disponibles : ${supported}.`,
+    );
+  }
+  const parsed = Number(value);
+  if (!isOperationInvocationEffectMachineRepresentationVersion(parsed)) {
+    throw new UsageError(
+      `Représentation machine non supportée : ${value}. Disponibles : ${supported}.`,
+    );
+  }
+  return parsed;
 }
 
 /**
@@ -2026,7 +2070,7 @@ export async function runCli(
         return await commandRunOperationalState(deps, parsed, io);
       }
       case 'operation-effects': {
-        const parsed = parseArgs(rest, [...commonFlags, 'format']);
+        const parsed = parseArgs(rest, [...commonFlags, 'format', 'machine-representation-version']);
         return commandOperationEffects(parsed, io);
       }
       case 'invocation-outcomes': {

@@ -13,6 +13,8 @@ PORTÉE                              effet d'invocation prospectif machine publi
 CONTRATS SÉMANTIQUES SUPPORTÉS      1
 CONTRATS DE REPRÉSENTATION MACHINE  1
 REPRÉSENTATION PAR DÉFAUT           1
+REPRÉSENTATION 2                    IMPLÉMENTÉE EN LIGNE DE BASE SOURCE · état 2-bis
+                                    CONFORME · NON PUBLIÉE · NON SUPPORTÉE
 ```
 
 Ce document définit la structure et la portée du document machine que produit
@@ -45,6 +47,42 @@ supporté est datée par la frontière ci-dessus, et par elle seule : la présen
 de ce texte dans Git ne la constitue pas.
 Voir [`compatibility.md`](compatibility.md) § 3.4.
 
+Tout ce qui précède porte sur la **représentation machine 1**. La représentation
+machine 2, définie ci-dessous, n'a pas le même état, et il serait faux de le
+laisser croire.
+
+```text
+ÉTAT DE LA REPRÉSENTATION MACHINE 2
+  =  CIBLE NORMATIVE RATIFIÉE PAR L'HUMAIN
+     IMPLÉMENTÉE EN LIGNE DE BASE SOURCE · CONFORME
+     NON PUBLIÉE · NON SUPPORTÉE
+     état 2-bis au sens de compatibility.md § 3.4.1
+
+LA SEULE REPRÉSENTATION MACHINE SUPPORTÉE À CE JOUR
+  =  la représentation 1
+
+CE QUI EST ÉTABLI     le texte normatif de la représentation 2 · une
+                      implémentation conforme dans la ligne de base source · sa
+                      conformité, vérifiée pour CE contrat
+CE QUI NE L'EST PAS   aucune version publiée ne la rend · elle n'est le contrat
+                      public supporté d'aucune version · la conformité établie
+                      ne vaut pas vérification complète du dépôt
+
+FRONTIÈRE DE PUBLICATION DE LA REPRÉSENTATION 2
+  =  celle de la version de paquet qui la matérialisera, au sens générique de
+     compatibility.md § 2.2
+     aucune version de paquet n'est désignée ici, et ce contrat n'en dépend pas
+
+LA REPRÉSENTATION 1 NE CHANGE PAS D'ÉTAT
+  publiée · supportée · rendue par défaut · inchangée
+```
+
+Les deux représentations ne partagent donc pas le même état. Un énoncé de ce
+document portant sur « une implémentation conforme » vaut pour la représentation
+1 dans la version publiée, et pour la représentation 2 dans la ligne de base
+source — sa frontière de publication reste à franchir, et elle seule datera son
+entrée dans le contrat public supporté.
+
 ---
 
 # 1. Autorité et portée
@@ -62,10 +100,46 @@ Et rien d'autre.
 
 ```text
 ccr operation-effects --format json
+                      [--machine-representation-version <entier>]
 ```
 
 Un seul document JSON sur la sortie standard, à n'analyser qu'après un code de
 sortie `0`.
+
+`--machine-representation-version` est **facultative**, et sélectionne la
+représentation machine. C'est une dimension **distincte** de `--format` :
+
+```text
+--format                           format de sérialisation
+--machine-representation-version   représentation machine
+```
+
+```text
+sélecteur absent   →  représentation 1
+sélecteur = 1      →  représentation 1, à l'identique
+sélecteur = 2      →  représentation 2
+```
+
+```text
+AUCUNE MONTÉE IMPLICITE
+```
+
+L'appel historique `ccr operation-effects --format json` continue de signifier la
+représentation 1, et rend exactement les six entrées qu'il rendait, aux mêmes
+valeurs. Rien de nouveau n'atteint un consommateur qui n'a rien demandé.
+
+Le sélecteur appartient à la représentation 2, dont l'état est celui énoncé en
+tête de document : aucune version publiée ne le fournit à ce jour.
+
+Valeur de sélecteur non supportée :
+
+```text
+défaut d'usage   →  code de sortie 2
+                 →  aucun document JSON sur la sortie standard
+```
+
+L'usage se juge **avant** toute lecture, et un document partiel n'est jamais rendu
+(§ 2). Le contenu de la sortie d'erreur n'est pas normé par ce contrat.
 
 ## 1.3 Portée opération, jamais run
 
@@ -79,6 +153,12 @@ consommateur qui prépare une création de run doit pouvoir connaître l'effet
 d'invocation possible de l'opération avant de la déclencher.
 
 Il ne lit aucun run, aucune politique, aucun journal, aucun état.
+
+Cela vaut pour **toute** représentation. Aucune représentation de ce contrat ne
+dépend d'un état de run, d'un état de quota, d'une controverse, d'un matériau,
+d'une admissibilité courante ni d'une disponibilité au runtime. La représentation
+sélectionnée change le vocabulaire rendu, jamais la nature statique de la
+réponse.
 
 ## 1.4 Ce que ce contrat n'est pas
 
@@ -190,12 +270,17 @@ contrat. Un document partiel n'est jamais rendu.
 
 ```text
 operation_invocation_effect_contract_version               entier · 1
-operation_invocation_effect_machine_representation_version entier · 1
+operation_invocation_effect_machine_representation_version entier · 1 | 2
 operations                                                 tableau · § 4
 ```
 
+`operation_invocation_effect_machine_representation_version` porte la
+représentation **effectivement rendue** : `1` lorsque le sélecteur est absent ou
+vaut 1, `2` lorsqu'il vaut 2. Il ne dit rien de ce qu'une implémentation saurait
+rendre par ailleurs.
+
 Le tableau est **dense** : il porte une entrée par opération du vocabulaire de la
-version de ce contrat, sans exception. L'ordre du tableau ne porte aucune
+représentation rendue (§ 5), sans exception. L'ordre du tableau ne porte aucune
 sémantique.
 
 ---
@@ -212,8 +297,11 @@ invocation_effect    union discriminée · § 7
 
 # 5. Vocabulaire d'opération
 
-Vocabulaire **fermé et versionné**. La représentation machine 1 admet
-**exactement** ces six valeurs, et aucune autre :
+Vocabulaire **fermé et versionné**, propre à chaque représentation machine.
+
+### Représentation 1
+
+Elle admet **exactement** ces six valeurs, et aucune autre :
 
 ```text
 START
@@ -223,6 +311,43 @@ PAUSE
 RESUME
 HANDOFF
 ```
+
+### Représentation 2
+
+Elle admet **exactement** ces neuf valeurs, et aucune autre :
+
+```text
+START
+STEP
+SEND
+PAUSE
+RESUME
+HANDOFF
+DETECT
+PROPOSE
+ADDUCE_MODEL
+```
+
+Les six premières sont celles de la représentation 1, **inchangées** : mêmes
+identités, mêmes valeurs (§ 8). La représentation 2 ne remplace pas la
+représentation 1 ; elle s'y ajoute.
+
+### Identité d'opération, jamais identité de déclencheur
+
+```text
+IDENTITÉ D'OPÉRATION DE CE CONTRAT
+  ≠  IDENTITÉ DE DÉCLENCHEUR DE LA COMPTABILITÉ D'INVOCATION
+```
+
+`DETECT`, `PROPOSE` et `ADDUCE_MODEL` nomment des **opérations** — ce qu'un
+appelant déclenche. Le vocabulaire de déclencheurs de
+[`run-invocation-accounting-machine.md`](run-invocation-accounting-machine.md)
+nomme, lui, **pourquoi** un engagement a été fait ; ses littéraux propres au
+domaine lui appartiennent, et ce contrat ne les emploie pas.
+
+Que `START`, `STEP` et `SEND` s'écrivent de la même façon dans les deux
+vocabulaires est un fait, jamais une règle de correspondance. Aucun consommateur
+ne doit dériver un vocabulaire de l'autre, dans un sens ni dans l'autre.
 
 ## 5.1 Règle d'extension
 
@@ -239,6 +364,22 @@ pas** dans un document de représentation 1. Un consommateur conforme de la
 représentation 1 reçoit donc toujours les six mêmes entrées, et peut traiter
 toute autre valeur comme une non-conformité — jamais comme une extension
 silencieuse.
+
+La règle vaut pour **toute** représentation : ce qui n'est pas au vocabulaire de
+la représentation rendue n'y apparaît pas.
+
+```text
+COUVERTURE D'UNE REPRÉSENTATION
+  =  son propre vocabulaire, clos et énuméré
+
+  ≠  toute opération publique de CCR
+  ≠  toute opération publique susceptible d'engager une invocation
+```
+
+La présente évolution n'institue aucune obligation générale de couvrir toute
+opération publique de CCR. L'entrée d'une opération dans ce document se décide
+opération par opération, et se matérialise par la règle d'extension ci-dessus.
+Ce document ne statue pas sur une politique de couverture ultérieure.
 
 ```text
 VALEUR D'OPÉRATION HORS VOCABULAIRE
@@ -371,7 +512,9 @@ comptée par le journal, et le second contrôle la voit.
 
 ---
 
-# 8. Valeurs de la version 1
+# 8. Valeurs par représentation
+
+**Représentation 1**
 
 ```text
 opération   may_call_provider   invocation_effect
@@ -382,6 +525,25 @@ PAUSE       NO                  EXACT(0)
 RESUME      NO                  EXACT(0)
 HANDOFF     NOT_AVAILABLE       UNKNOWN
 ```
+
+**Représentation 2**
+
+```text
+opération      may_call_provider   invocation_effect
+STEP           YES                 EXACT(1)
+SEND           YES                 EXACT(1)
+START          YES                 AT_MOST(2)
+PAUSE          NO                  EXACT(0)
+RESUME         NO                  EXACT(0)
+HANDOFF        NOT_AVAILABLE       UNKNOWN
+DETECT         YES                 EXACT(1)
+PROPOSE        YES                 EXACT(1)
+ADDUCE_MODEL   YES                 EXACT(1)
+```
+
+Les six valeurs héritées sont **identiques**, jusqu'au jeton. La représentation 2
+n'en réinterprète aucune et n'en modifie aucune cardinalité ; `HANDOFF` y reste
+`NOT_AVAILABLE` et `UNKNOWN`.
 
 ## 8.1 `START` — sémantique normative
 
@@ -417,6 +579,61 @@ le serait tout autant — d'où `UNKNOWN` pour `HANDOFF`.
 
 `HANDOFF` ouvre une session interactive dans un terminal local. Ce qu'elle
 consommera ensuite n'appartient pas à CCR, et aucun chiffre ne serait honnête.
+
+## 8.3 `DETECT`, `PROPOSE`, `ADDUCE_MODEL` — sémantique normative
+
+Ces trois opérations sont **demandées par un humain**, portent chacune un
+périmètre nommé, et engagent, lorsque l'exécution atteint leur chemin
+d'engagement, **une invocation, et une seule**.
+
+```text
+DETECT         EXACT(1)     ccr detect
+PROPOSE        EXACT(1)     ccr propose
+ADDUCE_MODEL   EXACT(1)     ccr adduce-model
+```
+
+Aucune n'a de multiplicité de créneau. C'est ce qui les distingue de `START`,
+dont le contrôle de quota s'applique par créneau d'expert manquant (§ 8.1). Un
+périmètre plus large ne se traduit jamais par plusieurs engagements : il
+dimensionne ce qui est soumis, jamais le nombre d'appels.
+
+Les faits qui fixent ces cardinalités appartiennent aux contrats de domaine, qui
+les publient déjà et que ce document **ne modifie ni ne réinterprète** :
+
+```text
+DETECT         controversy.md      § 13.3  chaîne d'engagement unique
+                                   § 23    branches d'échec énumérées, sans rejeu
+
+PROPOSE        reconciliation.md   § 35.4  instantané unique, contexte unique, et
+                                           refus déterministe antérieur à tout
+                                           engagement lorsque la borne est
+                                           dépassée
+                                   § 37    chaîne d'engagement unique, sans rejeu
+                                           automatique
+
+ADDUCE_MODEL   evidence.md         § 18    chemin en trois phases, un seul appel
+                                   § 19    aucun second appel, aucune reprise
+```
+
+Ces renvois **expliquent** la valeur ; ils ne la fondent pas une seconde fois.
+L'autorité numérique demeure unique (§ 9).
+
+`EXACT(1)` ne signifie pas ici « une invocation à chaque commande émise ». Un
+refus de quota, un refus de fraîcheur, un verrou indisponible, un périmètre hors
+borne — tous antérieurs à l'engagement — donnent 0 engagement réel sans
+contredire l'effet publié (§ 7.4).
+
+## 8.4 Ce que l'extension ne dit pas de `UNKNOWN`
+
+```text
+UNKNOWN   =  INDÉTERMINATION FAISANT AUTORITÉ
+          ≠  AUTORITÉ MANQUANTE
+```
+
+La représentation 2 est définie parce que trois opérations étaient **absentes**
+du document, et pour cette seule raison. Elle ne corrige pas `UNKNOWN`, ne le juge
+pas insuffisant et n'en réduit pas la portée. Une entrée `UNKNOWN` répond ; une
+entrée absente ne répond pas. Les deux situations ne se confondent jamais.
 
 ---
 
@@ -464,7 +681,8 @@ détecterait pas un passage de 2 à 3.
 ```text
 faux              n'existe pas dans ce contrat : may_call_provider a trois états
 zéro              EXACT(0) est un fait exact, jamais une absence
-absent            aucune entrée d'opération n'est absente : le tableau est dense
+absent            aucune entrée d'opération n'est absente de la représentation
+                  rendue : le tableau est dense
 inconnu           UNKNOWN · ne signifie ni zéro, ni illimité, ni erreur
 non applicable    exprimé par NOT_AVAILABLE sur may_call_provider
 échec             code de sortie non nul, sans document
@@ -475,16 +693,32 @@ non applicable    exprimé par NOT_AVAILABLE sur may_call_provider
 # 11. Compatibilité
 
 ```text
-AXE DE CONTRAT SÉMANTIQUE      version 1
-AXE DE REPRÉSENTATION MACHINE  version 1
+AXE DE CONTRAT SÉMANTIQUE      version 1 · courante et supportée
+AXE DE REPRÉSENTATION MACHINE  version 1 · seule supportée, rendue par défaut
+                               version 2 · implémentée et conforme en ligne de
+                                           base source, état 2-bis
 ```
 
 Axes propres à ce contrat. Aucun contrat public supporté existant n'est modifié,
 étendu ni réinterprété par ce document.
 
+L'ajout de la représentation 2 est **additif**. La représentation 1 conserve son
+vocabulaire, ses valeurs et son statut de représentation rendue par défaut ; un
+consommateur conforme de la représentation 1 n'a rien à changer, et ne reçoit
+rien de nouveau sans l'avoir demandé.
+
+Le contrat sémantique **reste en version 1** : aucune opération n'est retirée,
+aucune n'est renommée, aucune n'est réinterprétée, aucune cardinalité publiée
+n'est modifiée.
+
 Un changement de la cardinalité publiée d'une opération existante est un
 changement de **sens** de ce contrat, et relève de ses propres axes de version ; il
 ne se glisse pas dans une correction.
+
+Aucune version de paquet n'est désignée par ce document. Le genre du changement
+de paquet, et le numéro qui le portera, relèvent de
+[`compatibility.md`](compatibility.md) ; ce contrat n'en dépend pas et ne les
+anticipe pas.
 
 ---
 
