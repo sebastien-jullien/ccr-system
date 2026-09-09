@@ -680,6 +680,142 @@ Cette section n'énonce aucune règle de compatibilité nouvelle. Les règles de
 majeure, de mineure et de correctif restent celles des § 5, § 6 et § 7, et
 gouvernent ces contrats comme tous les autres.
 
+## 3.4.4 Représentation machine ajoutée à un contrat déjà supporté
+
+Ajouter une **représentation** à un contrat déjà supporté n'est pas ajouter un
+contrat. Les deux gestes ne se confondent pas, et ce document ne les enregistre
+pas au même endroit :
+
+```text
+AJOUT D'UN CONTRAT SUPPORTÉ    § 3.4 · l'énumération ci-dessus
+AJOUT D'UNE REPRÉSENTATION     ici · le contrat, lui, était déjà supporté
+
+JEU DES CONTRATS PUBLICS SUPPORTÉS
+  →  INCHANGÉ par un ajout de représentation
+```
+
+L'évolution des axes de version propres à un contrat lui appartient, et relève
+du § 6 et du § 8. La présente sous-section en enregistre l'application concrète,
+sans instituer aucune règle nouvelle.
+
+**Représentation ajoutée par v1.5.0 — publication sous frontière**
+
+```text
+CONTRAT CONCERNÉ                        docs/specs/operation-invocation-effect-machine.md
+                                        contrat public supporté depuis la
+                                        publication de v1.3.0
+AUTORITÉ NORMATIVE                      RATIFIÉE PAR L'HUMAIN
+IMPLÉMENTATION                          PRÉSENTE DANS LA LIGNE DE BASE SOURCE
+CONFORMITÉ DE CETTE REPRÉSENTATION      ÉTABLIE
+VERSION DE PUBLICATION PRÉPARÉE         1.5.0
+AXE DE CONTRAT SÉMANTIQUE               1 · INCHANGÉ
+AXE DE REPRÉSENTATION MACHINE           1 · supportée, rendue par défaut
+                                        2 · destinée au jeu public supporté de
+                                            v1.5.0, à compter de la frontière
+CHANGEMENT DE COMPATIBILITÉ             additif
+CONTRATS SUPPORTÉS EXISTANTS            INCHANGÉS
+CONTRAT NOUVEAU                         AUCUN
+JEUX DE CONTRATS SUPPORTÉS DE
+  v1.0.0 · v1.1.0 · v1.2.0
+  v1.3.0 · v1.4.0                       INCHANGÉS
+APPARTENANCE À LA LIGNE DE BASE DE v1.0.0   inchangée
+```
+
+### La frontière de v1.5.0, en application du § 2.2
+
+Le mécanisme générique appartient au § 2.2, et à lui seul. La présente
+sous-section en **enregistre l'application concrète à v1.5.0** ; elle ne définit
+aucune frontière propre, et rien ici ne doit se lire comme une seconde autorité
+générique.
+
+```text
+FRONTIÈRE DE PUBLICATION DE v1.5.0
+  =  LA PRÉSENCE RÉUSSIE, SUR LE REMOTE CANONIQUE DU DÉPÔT,
+     D'UN TAG NOMMÉ `v1.5.0` QUI SOIT
+       a)  UN OBJET DE TAG ANNOTÉ, ET
+       b)  DONT LA CIBLE DIRECTE SOIT DE TYPE `commit`, ET
+       c)  DONT LA CIBLE DIRECTE COMME LA CIBLE ÉPLUCHÉE SOIENT EXACTEMENT
+           LE COMMIT DE PRÉPARATION v1.5.0 RATIFIÉ QUI PORTE CETTE DÉCLARATION
+```
+
+Les conditions se vérifient à la main, séparément :
+
+```text
+refs/tags/v1.5.0        doit être un OBJET DE TAG annoté, et non le commit
+refs/tags/v1.5.0^{}     doit être EXACTEMENT le commit de préparation v1.5.0
+```
+
+Aucune empreinte de commit n'est inscrite ici : ce commit n'existe pas encore au
+moment où ces lignes sont préparées. L'identité visée est désignée par sa
+qualité — *le commit de préparation ratifié qui porte cette déclaration* — et
+devient mécaniquement vérifiable dès qu'il est créé.
+
+Quatre cas ne franchissent **pas** la frontière, et c'est délibéré :
+
+```text
+tag `v1.5.0` LÉGER, même sur le bon commit           →  FRONTIÈRE NON FRANCHIE
+tag `v1.5.0` ANNOTÉ pointant sur un autre commit     →  FRONTIÈRE NON FRANCHIE
+tag `v1.5.0` annoté visant un AUTRE OBJET DE TAG,
+  fût-il épluchable jusqu'au bon commit              →  FRONTIÈRE NON FRANCHIE
+tag `v1.5.0` annoté et exact, mais LOCAL SEULEMENT   →  FRONTIÈRE NON FRANCHIE
+```
+
+Ni la présente section, ni le commit qui la porte, ni le champ `version` de
+`package.json` ne franchissent cette frontière : ils la **préparent**.
+
+```text
+AVANT LA FRONTIÈRE
+  P · REPRÉSENTATION 2                  ÉTAT 2-BIS
+  REPRÉSENTATIONS SUPPORTÉES            1, et elle seule
+  VERSION PUBLIÉE COURANTE              1.4.0
+    et elle ne rend pas la représentation 2
+
+À COMPTER DE LA FRONTIÈRE
+  P · REPRÉSENTATION 2                  ÉTAT 3 · représentation publique supportée
+  REPRÉSENTATIONS SUPPORTÉES            1 et 2 · 1 rendue par défaut
+  PREMIÈRE LIGNE DE BASE SUPPORTÉE
+    DE LA REPRÉSENTATION 2              v1.5.0
+  VERSION PUBLIÉE COURANTE              v1.5.0
+
+CE QUI NE CHANGE PAS, DE PART ET D'AUTRE
+  axe de contrat sémantique de P        1
+  représentation 1                      six entrées, valeurs inchangées, rendue
+                                        par défaut · aucune montée implicite
+  jeu des contrats publics supportés    inchangé
+  ligne de base de v1.0.0               toujours exactement 8 documents
+  R1 · R2 · représentation 1 de P       faits historiques inchangés
+```
+
+### Release qualifiée — ce que l'autorité humaine a accepté
+
+La décision de publier v1.5.0 a été prise en connaissance de l'état de
+vérification, et cet état est enregistré ici tel qu'il est :
+
+```text
+CONFORMITÉ DE LA REPRÉSENTATION 2       ÉTABLIE
+PREUVE D'ANTI-DÉRIVE (P § 9)            RENFORCÉE · la cardinalité publiée est
+                                        confrontée, À L'EXÉCUTION, au nombre
+                                        d'engagements durables réellement
+                                        franchis — et non à un comptage de
+                                        contrôles de quota
+TYPECHECK · SUITE UNITAIRE COMPLÈTE     VERTS · PREUVE LOCALE
+SUITE CANONIQUE D'INTÉGRATION           NON EXÉCUTÉE PAR CETTE PRÉPARATION
+                                        son état antérieur, rouge et instable,
+                                        n'est ni infirmé ni requalifié
+VÉRIFICATION COMPLÈTE DU DÉPÔT          NON
+INTÉGRATION CONTINUE DISTANTE           NON INVOQUÉE
+```
+
+```text
+PREUVE LOCALE          ≠   VÉRIFICATION DISTANTE
+CONFORMITÉ ÉTABLIE     ≠   VÉRIFICATION COMPLÈTE DU DÉPÔT
+SUITE UNITAIRE VERTE   ≠   suites d'intégration vertes
+```
+
+Publier n'efface aucun de ces faits, et n'en requalifie aucun. Ce que l'autorité
+humaine a accepté est une publication dans cet état, non un état différent de
+celui-ci.
+
 ---
 
 # 4. Garantie 1.x

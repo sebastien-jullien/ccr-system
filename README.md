@@ -185,6 +185,16 @@ Ces trois surfaces sont **préparées pour la version 1.3.0**. Elles deviennent 
 
 `ccr operation-effects --format json` rend l'**effet d'invocation prospectif** des opérations supportées, sous `EXACT(n)`, `AT_MOST(n)` ou `UNKNOWN`. Aucun run n'est requis ni accepté : cette surface répond avant qu'un run existe. Un effet dit ce qu'une opération *peut* engager, jamais ce qu'elle engagera, et n'affirme ni admission de quota, ni admissibilité. Sa structure et sa sémantique sont définies par [`docs/specs/operation-invocation-effect-machine.md`](docs/specs/operation-invocation-effect-machine.md).
 
+**Représentation machine 2 de l'effet d'opération — v1.5.0**
+
+```bash
+ccr operation-effects --format json --machine-representation-version 2
+```
+
+`ccr operation-effects … --machine-representation-version 2` ajoute au document machine les trois opérations **assistées par modèle** — `DETECT`, `PROPOSE` et `ADDUCE_MODEL` — chacune sous `EXACT(1)`, et chacune pouvant appeler un fournisseur. La représentation `1` reste celle rendue **par défaut**, à l'identique : l'invocation historique continue de rendre ses six entrées aux mêmes valeurs, et aucune montée n'a lieu sans être demandée. Une valeur de sélecteur non supportée est un défaut d'usage : sortie `2`, et aucun document sur la sortie standard. Le contrat sémantique de la surface reste en version `1` — c'est la représentation qui avance, jamais le sens.
+
+Cette représentation est **préparée pour la version 1.5.0**. Elle devient supportée à compter de la publication canonique du tag annoté `v1.5.0`, et pas avant. La frontière exacte est énoncée par [`docs/specs/compatibility.md`](docs/specs/compatibility.md) § 3.4.4 ; le contrat lui-même reste [`docs/specs/operation-invocation-effect-machine.md`](docs/specs/operation-invocation-effect-machine.md).
+
 **Intention de production**
 
 ```bash

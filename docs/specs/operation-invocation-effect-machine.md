@@ -11,10 +11,13 @@ LIGNE DE BASE SUPPORTÉE             AUCUNE avant la frontière
                                     v1.3.0 à compter d'elle
 PORTÉE                              effet d'invocation prospectif machine public · lecture seule
 CONTRATS SÉMANTIQUES SUPPORTÉS      1
-CONTRATS DE REPRÉSENTATION MACHINE  1
+CONTRATS DE REPRÉSENTATION MACHINE  1 · et 2 à compter de la frontière de v1.5.0
 REPRÉSENTATION PAR DÉFAUT           1
-REPRÉSENTATION 2                    IMPLÉMENTÉE EN LIGNE DE BASE SOURCE · état 2-bis
-                                    CONFORME · NON PUBLIÉE · NON SUPPORTÉE
+REPRÉSENTATION 2                    IMPLÉMENTÉE EN LIGNE DE BASE SOURCE · CONFORME
+                                    VERSION DE PUBLICATION PRÉPARÉE  1.5.0
+                                    avant la frontière de v1.5.0 · état 2-bis ·
+                                      non supportée
+                                    à compter d'elle · état 3 · supportée
 ```
 
 Ce document définit la structure et la portée du document machine que produit
@@ -52,36 +55,41 @@ machine 2, définie ci-dessous, n'a pas le même état, et il serait faux de le
 laisser croire.
 
 ```text
-ÉTAT DE LA REPRÉSENTATION MACHINE 2
-  =  CIBLE NORMATIVE RATIFIÉE PAR L'HUMAIN
-     IMPLÉMENTÉE EN LIGNE DE BASE SOURCE · CONFORME
-     NON PUBLIÉE · NON SUPPORTÉE
-     état 2-bis au sens de compatibility.md § 3.4.1
-
-LA SEULE REPRÉSENTATION MACHINE SUPPORTÉE À CE JOUR
-  =  la représentation 1
-
 CE QUI EST ÉTABLI     le texte normatif de la représentation 2 · une
                       implémentation conforme dans la ligne de base source · sa
                       conformité, vérifiée pour CE contrat
-CE QUI NE L'EST PAS   aucune version publiée ne la rend · elle n'est le contrat
-                      public supporté d'aucune version · la conformité établie
-                      ne vaut pas vérification complète du dépôt
+CE QUI NE L'EST PAS   la conformité établie ne vaut pas vérification complète du
+                      dépôt
 
 FRONTIÈRE DE PUBLICATION DE LA REPRÉSENTATION 2
-  =  celle de la version de paquet qui la matérialisera, au sens générique de
-     compatibility.md § 2.2
-     aucune version de paquet n'est désignée ici, et ce contrat n'en dépend pas
+  =  celle de v1.5.0, au sens générique de compatibility.md § 2.2
+     un tag `v1.5.0` sur le remote canonique, OBJET DE TAG ANNOTÉ, dont la
+     cible directe est de type `commit` et dont la cible directe comme la cible
+     épluchée sont exactement le commit de préparation v1.5.0 ratifié
+     un tag léger, un tag annoté pointant ailleurs, ou un tag resté local
+     ne la franchissent pas
+     application concrète : compatibility.md § 3.4.4
+
+AVANT LA FRONTIÈRE DE v1.5.0
+  état 2-bis · aucune version publiée ne rend la représentation 2 ·
+  la version publiée courante est 1.4.0, et elle ne la contient pas ·
+  la seule représentation machine supportée est la représentation 1
+À COMPTER DE LA FRONTIÈRE DE v1.5.0
+  état 3 · représentation publique supportée ·
+  représentations supportées 1 et 2 · première ligne de base supportée de la
+  représentation 2 : v1.5.0
 
 LA REPRÉSENTATION 1 NE CHANGE PAS D'ÉTAT
-  publiée · supportée · rendue par défaut · inchangée
+  publiée · supportée · rendue par défaut · inchangée de part et d'autre
 ```
 
 Les deux représentations ne partagent donc pas le même état. Un énoncé de ce
 document portant sur « une implémentation conforme » vaut pour la représentation
 1 dans la version publiée, et pour la représentation 2 dans la ligne de base
-source — sa frontière de publication reste à franchir, et elle seule datera son
-entrée dans le contrat public supporté.
+source dès aujourd'hui, puis dans la version publiée à compter de la frontière
+ci-dessus — qui seule date son entrée dans le contrat public supporté. Ni ce
+texte, ni le commit qui le porte, ni le champ `version` de `package.json` ne la
+franchissent : ils la **préparent**.
 
 ---
 
@@ -129,7 +137,7 @@ représentation 1, et rend exactement les six entrées qu'il rendait, aux mêmes
 valeurs. Rien de nouveau n'atteint un consommateur qui n'a rien demandé.
 
 Le sélecteur appartient à la représentation 2, dont l'état est celui énoncé en
-tête de document : aucune version publiée ne le fournit à ce jour.
+tête de document : aucune version publiée antérieure à v1.5.0 ne le fournit.
 
 Valeur de sélecteur non supportée :
 
@@ -694,9 +702,11 @@ non applicable    exprimé par NOT_AVAILABLE sur may_call_provider
 
 ```text
 AXE DE CONTRAT SÉMANTIQUE      version 1 · courante et supportée
-AXE DE REPRÉSENTATION MACHINE  version 1 · seule supportée, rendue par défaut
+AXE DE REPRÉSENTATION MACHINE  version 1 · supportée, rendue par défaut
                                version 2 · implémentée et conforme en ligne de
-                                           base source, état 2-bis
+                                           base source · état 2-bis avant la
+                                           frontière de v1.5.0, état 3 et
+                                           supportée à compter d'elle
 ```
 
 Axes propres à ce contrat. Aucun contrat public supporté existant n'est modifié,
