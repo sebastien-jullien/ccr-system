@@ -64,6 +64,171 @@ COMPORTEMENT NON DOCUMENTÉ   pas un contrat public supporté par défaut
 Rien ne devient contrat public supporté par le seul fait d'exister, d'être
 observable, ou d'avoir toujours fonctionné ainsi.
 
+## 2.2 Publication d'une version de paquet
+
+Le § 1 énonce qu'une version publique du paquet est un **signal de
+compatibilité**. La présente section énonce l'**événement** qui l'émet.
+
+```text
+DÉPÔT CANONIQUE      le dépôt de référence du projet, explicitement désigné
+                     par l'autorité du projet
+CANDIDAT DE          le contenu de préparation de X.Y.Z retenu par l'autorité
+  PRÉPARATION        humaine, avant toute matérialisation
+  RATIFIÉ DE X.Y.Z
+COMMIT DE            le commit qui matérialise exactement ce candidat
+  PRÉPARATION
+TAG DE VERSION       une référence de tag nommée `vX.Y.Z`
+```
+
+Aucun nom de remote local — quel qu'il soit — n'est normatif ici : un alias est
+un moyen d'adressage, jamais la désignation du dépôt canonique.
+
+### 2.2.1 L'événement de publication
+
+```text
+LA FRONTIÈRE DE PUBLICATION DE `X.Y.Z` EST FRANCHIE
+  À L'INSTANT OÙ, dans le dépôt canonique, la conjonction COMPLÈTE
+  suivante DEVIENT établie :
+
+  1  un tag de version `vX.Y.Z` y est établi
+  2  cette référence désigne un OBJET DE TAG ANNOTÉ
+  3  la CIBLE DIRECTE de cet objet est de type `commit`
+  4  cette cible directe est EXACTEMENT le commit de préparation
+     matérialisant le candidat ratifié de X.Y.Z
+  5  la CIBLE ÉPLUCHÉE de la référence est CE MÊME commit
+
+À COMPTER DE CE FRANCHISSEMENT
+  X.Y.Z est canoniquement publiée
+```
+
+```text
+CHACUNE DES CINQ CONDITIONS   nécessaire
+LA CONJONCTION COMPLÈTE       suffisante
+TOUT SOUS-ENSEMBLE STRICT     insuffisant
+```
+
+Aucune ne se déduit d'une autre, et aucune n'en supplée une autre.
+
+### 2.2.2 Trois identités, jamais confondues
+
+```text
+LA RÉFÉRENCE   ce qui porte le nom `vX.Y.Z`
+L'OBJET DE TAG l'objet que cette référence désigne
+LE COMMIT      l'objet que cet objet de tag désigne directement
+
+IDENTITÉ DE L'OBJET DE TAG   ≠   IDENTITÉ DU COMMIT PUBLIÉ
+```
+
+**Le contrôle direct et le contrôle épluché ne disent pas la même chose.** Le
+premier exclut les chaînes : un tag annoté qui en désigne un autre, lequel
+désigne le bon commit, s'épluche correctement — et pourtant sa cible directe
+n'est pas un commit. Le second confirme l'identité de résolution finale. Les
+deux sont exigés. (Sans valeur normative : le premier se lit sur
+`refs/tags/vX.Y.Z`, le second sur `refs/tags/vX.Y.Z^{}`.)
+
+### 2.2.3 Annoté, et non signé
+
+Un tag léger ne publie pas, même établi sur le commit exact : l'acte de
+publication doit avoir sa propre existence durable — identité d'objet propre,
+métadonnée de tagueur enregistrée (nom, adresse électronique, date), message
+conservé, objet distinct du commit publié.
+
+```text
+ANNOTÉ                          ≠  SIGNÉ
+MÉTADONNÉE DE TAGUEUR ENREGISTRÉE  ≠  IDENTITÉ AUTHENTIFIÉE
+```
+
+Un tag annoté non signé satisfait pleinement la présente section, qui n'affirme
+aucune authentification du tagueur, n'établit aucune confiance cryptographique
+et ne définit aucune vérification de signature.
+
+### 2.2.4 Candidat, puis commit
+
+```text
+AVANT MATÉRIALISATION  l'autorité humaine ratifie un CANDIDAT DE PRÉPARATION —
+                       un contenu, non un objet Git
+APRÈS MATÉRIALISATION  le commit qui matérialise exactement ce candidat, et son
+                       identité d'objet exacte
+```
+
+Un texte de préparation n'a donc jamais à porter une empreinte qui n'existe pas
+encore quand il s'écrit : le candidat suffit à préparer, l'identité du commit
+suffit à vérifier.
+
+### 2.2.5 Préparer n'est pas publier
+
+```text
+métadonnée de version préparée dans la source        NE PUBLIE PAS
+déclaration de version écrite dans la source         NE PUBLIE PAS
+commit de préparation créé                           NE PUBLIE PAS
+commit de préparation poussé sur le dépôt canonique  NE PUBLIE PAS
+tag de version établi seulement localement           NE PUBLIE PAS
+
+VERSION PRÉPARÉE   ≠   VERSION PUBLIÉE
+```
+
+C'est le § 2.1 appliqué à la préparation d'une version : rien ne devient contrat
+public supporté par le seul fait d'exister. Un champ de version prépare un
+signal ; il ne l'émet pas.
+
+```text
+LE FAIT NORMATIF   le franchissement de la frontière dans le dépôt canonique
+CE QUI NE L'EST    l'issue d'une opération ayant tenté de l'établir
+  PAS
+GITHUB RELEASE     aucun rôle général défini par la présente section
+```
+
+La manière de constater ce franchissement est une procédure de preuve,
+extérieure au présent contrat.
+
+### 2.2.6 Un franchissement ne se défait pas
+
+Le franchissement est un **événement daté**, non un état réversible. Une fois
+survenu, il demeure un fait historique.
+
+```text
+FRONTIÈRE FRANCHIE   →   X.Y.Z est canoniquement publiée
+LE FRANCHISSEMENT        demeure un fait historique
+AUCUNE RÈGLE INVERSE AUTOMATIQUE n'est définie
+```
+
+Si la référence qualifiante vient plus tard à disparaître, à être déplacée ou
+altérée, la version ne redevient pas non publiée et aucun état ne s'inverse :
+
+```text
+PERTE OU ALTÉRATION ULTÉRIEURE DU TAG
+  ≠  dépublication
+  ≠  retour à un état antérieur
+  =  atteinte à l'intégrité du dépôt canonique,
+     relevant d'une autorité et d'une décision distinctes
+```
+
+La présente section constate ce problème ; elle n'en définit ni le remède, ni
+aucune politique de dépublication. Une évolution ultérieure du statut d'une
+version publiée relèverait d'une autorité et d'une décision explicites, que ce
+document ne préempte pas.
+
+### 2.2.7 Vérité des textes de préparation
+
+Un texte normatif de préparation de version destiné à survivre inchangé au
+franchissement doit être vrai **des deux côtés** :
+
+```text
+AVANT   la frontière n'est pas franchie
+APRÈS   elle l'est, et le texte n'a pas changé
+
+AUCUN CHANGEMENT DOCUMENTAIRE N'EST REQUIS
+POUR LE SEUL FAIT D'AVOIR FRANCHI LA FRONTIÈRE
+```
+
+Toute affirmation dont la vérité diffère entre ces deux moments porte donc sa
+condition ; une affirmation absolue vraie d'un seul côté est un défaut du texte,
+non un état à réparer après coup.
+
+Cette règle porte sur les textes normatifs de préparation de version, et sur
+eux seuls. Elle n'exige rien de la prose du dépôt en général, et ne prétend pas
+qu'un tel texte décrive les atteintes ultérieures du § 2.2.6.
+
 ---
 
 # 3. Ligne de base supportée de v1.0.0
@@ -253,10 +418,15 @@ JEUX DE CONTRATS SUPPORTÉS DE
 APPARTENANCE À LA LIGNE DE BASE DE v1.0.0   inchangée
 ```
 
-### La frontière, et elle seule
+### La frontière, en application du § 2.2
 
-Une version de paquet publie ; un document ne se publie pas lui-même. La
-frontière est donc nommée ici une fois, en termes mécaniquement vérifiables :
+Le mécanisme générique appartient au § 2.2, et à lui seul. La présente
+sous-section en **enregistre l'application concrète à v1.3.0** ; elle ne définit
+aucune frontière propre, et rien ici ne doit se lire comme une seconde autorité
+générique.
+
+Une version de paquet publie ; un document ne se publie pas lui-même. Pour
+v1.3.0, la frontière du § 2.2 s'instancie ainsi :
 
 ```text
 FRONTIÈRE DE PUBLICATION DE v1.3.0
@@ -406,8 +576,8 @@ R1 · R2 · P   =  ÉTAT 2-BIS   avant la frontière de publication de v1.3.0
 
 Tant que la frontière n'est pas franchie, ils ne sont **pas** en état 3, et rien
 dans ce document ne doit se lire comme tel. Le passage de 2-bis à 3 n'est pas un
-effet du présent texte : il est daté par la frontière définie au § 3.4, et par
-elle seule.
+effet du présent texte : il est daté par la frontière générique définie au
+§ 2.2, et par elle seule.
 
 ```text
 ENTRÉE DU CODE DANS LA LIGNE DE BASE SOURCE   =  2  →  2-bis
