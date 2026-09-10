@@ -220,7 +220,10 @@ test('(P1/P2) démarrage CLI réel : URL annoncée, session, API — et Host hos
     assert.equal((await http(cockpit.port, '/api/runs')).status, 401, 'sans cookie, rien');
     const runs = await http(cockpit.port, '/api/runs', { cookie });
     assert.equal(runs.status, 200);
-    assert.deepEqual(JSON.parse(runs.body), { runs: [] });
+    // Le fait éprouvé ici est la collection, pas la forme de l'enveloppe : celle-ci
+    // porte des champs voisins strictement additifs, et n'a jamais promis d'être close.
+    const body = JSON.parse(runs.body) as { runs: unknown[] };
+    assert.deepEqual(body.runs, []);
 
     // P2 — Host forgé sur une connexion loopback bien réelle.
     for (const host of ['evil.example', `localhost:${String(cockpit.port)}`]) {
