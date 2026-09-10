@@ -475,7 +475,8 @@ test('(H12) /api/runs : liste vide, puis plusieurs runs, puis un run illisible',
     const result = await http(empty.port, '/api/runs', { cookie: empty.cookie });
     assert.equal(result.status, 200);
     assert.match(header(result, 'content-type'), /^application\/json/);
-    assert.deepEqual(JSON.parse(result.body), { runs: [] });
+    const body = JSON.parse(result.body) as { runs: unknown[] };
+    assert.deepEqual(body.runs, []);
   } finally {
     await empty.cleanup();
   }
