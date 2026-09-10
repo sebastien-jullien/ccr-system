@@ -244,9 +244,17 @@ test('(A7) le shell ne référence que des ressources de même origine', async (
       assert.equal(html.includes(external), false, `référence externe : ${external}`);
     }
     // Chaque module référencé est réellement déclaré dans l'allowlist.
+    //
+    // Une ancre de fragment seul — `href="#…"`, tel le lien d'évitement du
+    // shell — ne désigne aucune route : elle vise un élément du MÊME document,
+    // ne déclenche aucune requête, et ne peut donc pas figurer dans une table
+    // de routes servies. Elle est écartée du contrôle d'allowlist, et d'elle
+    // seule : toute référence qui désigne réellement une ressource reste tenue
+    // d'être déclarée.
     const referenced = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((match) => match[1] ?? '');
     assert.ok(referenced.length >= 2);
     for (const reference of referenced) {
+      if (reference.startsWith('#')) continue;
       assert.ok(COCKPIT_ASSETS.has(reference), `${reference} déclaré`);
     }
   } finally {
