@@ -238,9 +238,15 @@ test('(S1) START : 202 après allocation et association, avant tout fournisseur'
     assert.equal(b.providerCalls(), 2, 'les deux sessions natives ont été initialisées');
 
     // La vérité finale vient du read model, jamais du reçu.
+    //
+    // L'enveloppe HTTP porte le read model du run sous `run` ; l'identité y est
+    // imbriquée, et n'a jamais été au premier niveau.
     const view = await b.get(`/api/runs/${created}`);
     assert.equal(view.status, 200, view.raw);
-    assert.equal((view.body['identity'] as { run_id: string }).run_id, created);
+    assert.equal(
+      (view.body['run'] as { identity: { run_id: string } }).identity.run_id,
+      created,
+    );
   } finally {
     gate.release();
     await b.cleanup();
