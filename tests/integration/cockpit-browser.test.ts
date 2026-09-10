@@ -91,8 +91,8 @@ test('(B1-B8) cockpit réel dans un navigateur réel', { timeout: 300_000 }, asy
 
     // B1 — le shell se charge et s'affiche.
     await browser.navigate(url);
-    assert.equal(await browser.evaluate<string>('document.title'), 'CCR — Local Cockpit');
-    assert.equal(await browser.evaluate<string>('document.querySelector("h1").textContent'), 'CCR — Local Cockpit');
+    assert.equal(await browser.evaluate<string>('document.title'), 'CCR — Contre-expertise croisée');
+    assert.equal(await browser.evaluate<string>('document.querySelector("h1").textContent'), 'CCRContre-expertise croisée');
 
     // B2 — le cookie posé par « / » permet à l'API d'être consommée.
     await browser.waitFor('document.querySelectorAll("#runs-list li").length === 2');
@@ -106,7 +106,7 @@ test('(B1-B8) cockpit réel dans un navigateur réel', { timeout: 300_000 }, asy
     // B3 — la sélection affiche l'Overview.
     await browser.evaluate('document.querySelector("#runs-list button").click()');
     await browser.waitFor('document.querySelector("#section-overview").textContent.includes("CCR-20260402-001")');
-    assert.equal(await browser.evaluate<string>('document.getElementById("run-title").textContent'), 'CCR-20260402-001');
+    assert.equal(await browser.evaluate<string>('document.querySelector("#run-title .run-heading-id").textContent'), 'CCR-20260402-001');
 
     // B4 — pagination : la page suivante s'ajoute réellement, par le curseur.
     await browser.evaluate('document.getElementById("tab-timeline").click()');
@@ -136,6 +136,10 @@ test('(B1-B8) cockpit réel dans un navigateur réel', { timeout: 300_000 }, asy
     // Aucun lien exécutable n'a été fabriqué depuis une donnée.
     const hrefs = await browser.evaluate<string[]>('[...document.querySelectorAll("[href],[src]")].map((n) => n.getAttribute("href") ?? n.getAttribute("src"))');
     for (const href of hrefs) {
+      // Une ancre de fragment seul — tel le lien d’évitement du shell — vise un
+      // élément du MÊME document : elle ne désigne aucune ressource et ne
+      // déclenche aucune requête. Elle est écartée, et elle seule.
+      if (href.startsWith('#')) continue;
       assert.equal(href.startsWith('/assets/'), true, `ressource inattendue : ${href}`);
     }
 
@@ -206,9 +210,13 @@ test('(B1-B8) cockpit réel dans un navigateur réel', { timeout: 300_000 }, asy
       'assets/api.js',
       'assets/app.js',
       'assets/cockpit.js',
+      'assets/conversation.js',
       'assets/labels.js',
+      'assets/link-safety.js',
+      'assets/markdown.js',
       'assets/render.js',
       'assets/styles.css',
+      'assets/vendor/marked.esm.js',
     ];
     for (const target of sameOrigin) {
       const known = expected.includes(target) || target.startsWith('api/runs/CCR-20260402-001/timeline?');
@@ -227,7 +235,7 @@ test('(B1-B8) cockpit réel dans un navigateur réel', { timeout: 300_000 }, asy
     await browser.waitFor('!document.getElementById("banner").hasAttribute("hidden")');
     const banner = await browser.evaluate<string>('document.getElementById("banner").textContent');
     t.diagnostic(`bannière après redémarrage : « ${banner} »`);
-    assert.match(banner, /Session expirée/);
+    assert.match(banner, /session cockpit a expiré/);
 
     // Un rechargement suffit à repartir : aucune boucle n'a été nécessaire.
     await browser.navigate(url);
