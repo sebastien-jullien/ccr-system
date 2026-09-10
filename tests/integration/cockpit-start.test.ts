@@ -444,11 +444,18 @@ test('(S7) initialisation partielle : le run est conservé, la session obtenue a
     const state = JSON.parse(await readFile(path.join(b.runsDir, created, 'state.json'), 'utf8')) as { state: string };
     const manifest = JSON.parse(
       await readFile(path.join(b.runsDir, created, 'manifest.json'), 'utf8'),
-    ) as { agents: { claude: { session_id: string | null }; codex: { session_id: string | null } } };
-    t.diagnostic(`état=${state.state} · claude=${String(manifest.agents.claude.session_id)} · codex=${String(manifest.agents.codex.session_id)}`);
+    ) as {
+      experts: Record<'author' | 'challenger', { provider: string; session_id: string | null }>;
+    };
+    t.diagnostic(
+      `état=${state.state} · author=${manifest.experts.author.provider}/${String(manifest.experts.author.session_id)} · ` +
+        `challenger=${manifest.experts.challenger.provider}/${String(manifest.experts.challenger.session_id)}`,
+    );
     assert.equal(state.state, 'FAILED_INITIALIZATION');
-    assert.equal(manifest.agents.claude.session_id, 'claude-1', 'la session réussie est conservée');
-    assert.equal(manifest.agents.codex.session_id, null);
+    assert.equal(manifest.experts.author.provider, 'claude');
+    assert.equal(manifest.experts.author.session_id, 'claude-1', 'la session réussie est conservée');
+    assert.equal(manifest.experts.challenger.provider, 'codex');
+    assert.equal(manifest.experts.challenger.session_id, null);
 
     // Retransmission : aucune seconde session, aucun second run. Un verdict
     // d'échec revient sous forme d'enveloppe publique — c'est le contrat gelé
