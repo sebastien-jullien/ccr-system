@@ -273,7 +273,7 @@ test('(H5) « / » pose la session, avec les bons attributs et aucun contenu CCR
     assert.equal(result.body.includes('CCR-20260402-001'), false, 'aucune donnée de run dans le shell');
     assert.equal(result.body.includes('Titre CCR'), false);
     assertNoInlineCode(result.body);
-    assert.match(result.body, /CCR — Local Cockpit/);
+    assert.match(result.body, /CCR — Contre-expertise croisée/);
   } finally {
     await b.cleanup();
   }
