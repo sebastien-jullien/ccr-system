@@ -316,6 +316,9 @@ test('(L3) quota : deux opérations admises, la troisième refusée sans attendr
     assert.equal(first.status, 202, first.raw);
     assert.equal(second.status, 202, second.raw);
     assert.equal(b.instance.manager.activeCount(), 2);
+    await untilEntered(gate, 2);
+    const enteredBeforeThird = gate.entered();
+    assert.equal(enteredBeforeThird, 2, 'les deux opérations admises ont atteint leur fournisseur');
 
     // Le troisième reçoit son verdict AVANT que les deux autres ne finissent :
     // l'agent est toujours bloqué à cet instant.
@@ -326,7 +329,7 @@ test('(L3) quota : deux opérations admises, la troisième refusée sans attendr
 
     assert.equal(third.status, 503, third.raw);
     assert.equal((third.body['error'] as { code: string }).code, 'COCKPIT_BUSY');
-    assert.equal(gate.entered(), 2, 'le troisième n’a appelé aucun fournisseur');
+    assert.equal(gate.entered(), enteredBeforeThird, 'le troisième n’a appelé aucun fournisseur');
     assert.equal(await b.events(RUNS[2]), 2, 'et n’a produit aucun effet');
 
     // STEP + SEND partagent le quota : ce n'est pas 2 + 2.
