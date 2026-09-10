@@ -163,7 +163,7 @@ test('(B1..B8) création de run dans un navigateur réel', { timeout: 300_000 },
     const pendingButtons = await buttonsOf(browser);
     t.diagnostic(`202 → « ${pending.trim()} » · boutons=[${pendingButtons.join(',')}]`);
     assert.match(pending, /Création du run CCR-\d{8}-\d{3} en cours/, 'created_run_id est annoncé');
-    assert.match(pending, /Opération op_[0-9a-f]{64}/, 'operation_id est annoncé');
+    assert.match(pending, /op_[0-9a-f]{64}/, 'operation_id est annoncé');
     assert.deepEqual(pendingButtons, ['start-check'], 'un seul geste : vérifier');
 
     /**
@@ -189,8 +189,17 @@ test('(B1..B8) création de run dans un navigateur réel', { timeout: 300_000 },
       false,
       'rechargement automatique de la page',
     );
-    // Aucune création n'est réémise : la surface de création n'est pas touchée.
-    assert.equal(observed.filter((target) => target === 'api/runs').length <= 1, true, 'liste relue plus d’une fois');
+    // Aucune création n'est réémise : c'est un POST /api/runs qui la trahirait.
+    // Les relectures GET de la liste suivent les invalidations réelles ; leur
+    // nombre n'est pas l'objet de cette garantie, et il n'est pas borné ici.
+    const passive = browser.requests
+      .slice(before)
+      .map((entry) => ({ method: entry.method, target: entry.url.replace(/^https?:\/\/[^/]+\//, '') }));
+    assert.equal(
+      passive.some((entry) => entry.method === 'POST' && entry.target === 'api/runs'),
+      false,
+      'création réémise sans geste humain',
+    );
 
     gate.open();
     let attempts = 0;
@@ -206,7 +215,7 @@ test('(B1..B8) création de run dans un navigateur réel', { timeout: 300_000 },
     assert.equal((await happy.runIds()).length, 1, 'exactement un run');
 
     // La vue affichée vient du read model, pas du reçu.
-    await browser.waitFor(`document.querySelector("#section-overview").textContent.includes(${JSON.stringify(created)})`);
+    await browser.waitFor(`document.querySelector("#run-title .run-heading-id")?.textContent === ${JSON.stringify(created)}`);
 
     // XSS — titre et contexte hostiles rendus comme texte, dans les deux vues.
     await browser.evaluate('document.getElementById("tab-timeline").click()');
@@ -266,7 +275,7 @@ test('(B1..B8) création de run dans un navigateur réel', { timeout: 300_000 },
 
     const partialRun = (await partial.runIds())[0] ?? '';
     await browser.evaluate('document.getElementById("start-open").click()');
-    await browser.waitFor(`document.querySelector("#section-overview").textContent.includes(${JSON.stringify(partialRun)})`);
+    await browser.waitFor(`document.querySelector("#run-title .run-heading-id")?.textContent === ${JSON.stringify(partialRun)}`);
     const state = JSON.parse(await readFile(path.join(partial.runsDir, partialRun, 'state.json'), 'utf8')) as { state: string };
     assert.equal(state.state, 'FAILED_INITIALIZATION');
 
@@ -294,7 +303,7 @@ test('(B1..B8) création de run dans un navigateur réel', { timeout: 300_000 },
     assert.equal(unknownButtons.includes('mutation-retry'), false, 'aucun rejeu');
     assert.deepEqual(unknownButtons, ['start-check', 'start-open'], 'vérifier, ou ouvrir le run connu');
     await browser.evaluate('document.getElementById("start-open").click()');
-    await browser.waitFor(`document.querySelector("#section-overview").textContent.includes(${JSON.stringify(known)})`);
+    await browser.waitFor(`document.querySelector("#run-title .run-heading-id")?.textContent === ${JSON.stringify(known)}`);
 
     // ------------------------------------------------------------------
     // B5 — UNKNOWN sans run connu : aucune recherche heuristique

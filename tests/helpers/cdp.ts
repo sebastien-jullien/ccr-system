@@ -54,6 +54,8 @@ export interface ConsoleEntry {
  */
 export interface ObservedRequest {
   readonly url: string;
+  /** Méthode HTTP telle que CDP la rapporte, sans réécriture ni défaut. */
+  readonly method: string;
   readonly initiatorType: string;
   /** URLs de la pile d'appel de l'initiateur, quand elle existe. */
   readonly initiatorUrls: readonly string[];
@@ -174,7 +176,7 @@ export class BrowserSession {
       const response = params['response'] as { url?: string; headers?: Record<string, string> };
       this.responseHeaders.set(String(response.url), response.headers ?? {});
     } else if (method === 'Network.requestWillBeSent') {
-      const requested = params['request'] as { url?: string };
+      const requested = params['request'] as { url?: string; method: string };
       const initiator = (params['initiator'] ?? {}) as {
         type?: string;
         url?: string;
@@ -186,6 +188,7 @@ export class BrowserSession {
       ].filter((value) => value.length > 0);
       this.requests.push({
         url: String(requested.url),
+        method: requested.method,
         initiatorType: String(initiator.type ?? 'unknown'),
         initiatorUrls: urls,
       });
