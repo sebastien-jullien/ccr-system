@@ -187,7 +187,7 @@ test('(B-L1..B-L9) opérations longues dans un navigateur réel', { timeout: 300
     // B-L3 — STEP : 202, écran indéterminé, aucun rejeu offert.
     // ------------------------------------------------------------------
     await browser.evaluate('document.querySelector("[data-action=STEP]").click()');
-    await browser.waitFor('document.getElementById("run-status").textContent.includes("toujours en cours")');
+    await browser.waitFor('document.getElementById("run-status").textContent.includes("· en cours")');
     assert.ok(await browser.evaluate<boolean>('Boolean(document.getElementById("operation-check"))'), 'vérification offerte');
     assert.equal(
       await browser.evaluate<boolean>('Boolean(document.getElementById("mutation-retry"))'),
@@ -214,7 +214,7 @@ test('(B-L1..B-L9) opérations longues dans un navigateur réel', { timeout: 300
     await browser.waitFor('Boolean(document.getElementById("send-content"))');
     await browser.evaluate(`document.getElementById("send-content").value = ${JSON.stringify(HOSTILE_HUMAN)}`);
     await browser.evaluate('document.querySelector("[data-action=SEND]").click()');
-    await browser.waitFor('document.getElementById("run-status").textContent.includes("toujours en cours")');
+    await browser.waitFor('document.getElementById("run-status").textContent.includes("· en cours")');
     barrier.open();
     const sendAttempts = await confirm(browser);
     t.diagnostic(`SEND : verdict obtenu au bout de ${String(sendAttempts)} consultation(s)`);
@@ -247,7 +247,7 @@ test('(B-L1..B-L9) opérations longues dans un navigateur réel', { timeout: 300
     barrier.rearm();
     await select(browser, RUNS[1]);
     await browser.evaluate('document.querySelector("[data-action=STEP]").click()');
-    await browser.waitFor('document.getElementById("run-status").textContent.includes("toujours en cours")');
+    await browser.waitFor('document.getElementById("run-status").textContent.includes("· en cours")');
     // Second créneau : réservé depuis le test, faute de pouvoir piloter deux
     // runs simultanément depuis un seul écran. Le quota vaut deux.
     held = cockpit.manager.admit('op_saturation_navigateur');
@@ -283,7 +283,7 @@ test('(B-L1..B-L9) opérations longues dans un navigateur réel', { timeout: 300
     barrier.rearm();
     await select(browser, RUNS[2]);
     await browser.evaluate('document.querySelector("[data-action=STEP]").click()');
-    await browser.waitFor('document.getElementById("run-status").textContent.includes("toujours en cours")');
+    await browser.waitFor('document.getElementById("run-status").textContent.includes("· en cours")');
     await browser.evaluate('document.getElementById("operation-check").click()');
     await browser.waitFor('[...performance.getEntriesByType("resource")].some((e) => e.name.includes("/api/operations/"))');
     // L'identifiant d'opération se lit dans le trafic réel : c'est le
