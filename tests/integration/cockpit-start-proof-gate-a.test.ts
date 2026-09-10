@@ -606,23 +606,39 @@ for (const crash of CRASHES) {
         // avant tout fournisseur : un crash ultérieur ne peut pas le perdre.
         const manifest = JSON.parse(
           await readFile(path.join(runsDir, allocated[0], 'manifest.json'), 'utf8'),
-        ) as { runtime_config?: unknown; agents: Record<string, { session_id: string | null }> };
+        ) as {
+          runtime_config?: unknown;
+          experts: Record<'author' | 'challenger', { provider: string; session_id: string | null }>;
+        };
         assert.notEqual(manifest.runtime_config, undefined, 'snapshot runtime durable');
 
         if (crash.point === 'start-after-final') {
           // C5 : l'effet canonique était **complet** au moment du crash. Seul
           // le reçu terminal manque — et c'est exactement ce qui doit rester
           // `UNKNOWN` sans qu'aucune session soit recréée.
+          //
+          // La comptabilité de session d'un run natif s'indexe par SLOT
+          // d'expert — `author` et `challenger` — et le moteur n'est plus une
+          // clé : il est un attribut du slot. On nomme donc les deux, le slot
+          // ET son moteur, pour que la preuve dise toujours quelle session
+          // n'a pas été recréée, et sous quel fournisseur.
+          //
+          // Rien n'est facultatif ici : un slot absent doit faire tomber la
+          // preuve, jamais la traverser en silence.
           const state = JSON.parse(
             await readFile(path.join(runsDir, allocated[0], 'state.json'), 'utf8'),
           ) as { state: string };
+          const { author, challenger } = manifest.experts;
           t.diagnostic(
-            `C5 avant redémarrage : état=${state.state} · claude=${String(manifest.agents['claude']?.session_id)} · ` +
-              `codex=${String(manifest.agents['codex']?.session_id)}`,
+            `C5 avant redémarrage : état=${state.state} · ` +
+              `author=${author.provider}/${String(author.session_id)} · ` +
+              `challenger=${challenger.provider}/${String(challenger.session_id)}`,
           );
           assert.equal(state.state, 'READY', 'le run était correctement initialisé');
-          assert.equal(manifest.agents['claude']?.session_id, 'claude-1');
-          assert.equal(manifest.agents['codex']?.session_id, 'codex-1');
+          assert.equal(author.provider, 'claude', 'le slot author reste tenu par Claude');
+          assert.equal(author.session_id, 'claude-1', 'la session de l’author est celle d’avant le crash');
+          assert.equal(challenger.provider, 'codex', 'le slot challenger reste tenu par Codex');
+          assert.equal(challenger.session_id, 'codex-1', 'la session du challenger est celle d’avant le crash');
         }
       }
 
