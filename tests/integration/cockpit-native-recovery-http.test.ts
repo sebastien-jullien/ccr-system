@@ -96,6 +96,13 @@ test(
         codex: createFakeAdapter({ kind: 'codex', startSessionIds: ['codex-1'], sessionId: 'codex-1' }),
       };
 
+      // La liaison voulue par ce test, énoncée UNE fois. Elle gouverne à la
+      // fois la configuration d'exécution de la fixture et la naissance du run :
+      // `runtime_config` ne porte aucune affectation de slot, si bien que la
+      // transmettre seule ferait retomber START sur la liaison par défaut, et
+      // les deux événements ci-dessous nommeraient alors les sessions inverses.
+      const bindings = { author: 'codex', challenger: 'claude' } as const;
+
       // Un run natif sain, puis deux diagnostics de deux domaines différents.
       const started = await startNativeRun(
         { runsDir, now: () => new Date(), createAdapters: (): AgentAdapters => adapters },
@@ -103,10 +110,8 @@ test(
           title: 'T',
           cwd: process.cwd(),
           prompt: 'mission',
-          runtimeConfig: nativeFixtureManifest('CCR-20260811-001', {
-            author: 'codex',
-            challenger: 'claude',
-          }).runtime_config!,
+          bindings,
+          runtimeConfig: nativeFixtureManifest('CCR-20260811-001', bindings).runtime_config!,
         },
       );
       assert.equal(started.failure, undefined);
