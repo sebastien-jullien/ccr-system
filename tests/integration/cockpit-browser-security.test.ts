@@ -137,7 +137,7 @@ test('(S5) une charge hostile traverse trois vues, et n’exécute rien', { time
 
     // Le titre hostile n'a pas davantage échappé par le document lui-même.
     const title = await browser.evaluate<string>('document.title');
-    assert.equal(title, 'CCR — Local Cockpit', 'le titre du document a été altéré');
+    assert.equal(title, 'CCR — Contre-expertise croisée', 'le titre du document a été altéré');
 
     const consoleErrors = browser.consoleEntries.filter((entry) => entry.level === 'error');
     t.diagnostic(`console : ${consoleErrors.map((entry) => entry.text.slice(0, 60)).join(' | ') || '<aucune>'}`);
