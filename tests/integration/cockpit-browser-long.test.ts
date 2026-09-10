@@ -5,8 +5,8 @@
  * répondent dans la seconde. Une opération longue introduit une situation que
  * le navigateur n'avait encore jamais rencontrée : une réponse `202` qui ne
  * conclut rien, un écran qui doit dire « je ne sais pas encore » sans le
- * déguiser en échec, et un geste humain explicite pour aller chercher le
- * verdict.
+ * déguiser en échec, et un verdict que le suivi automatique du reçu va
+ * chercher seul — la vérification manuelle restant offerte.
  *
  * Aucun fournisseur réel n'est appelé : les adaptateurs sont des doublures
  * contrôlées par une barrière. Ce qui est réel ici, c'est le navigateur, le
@@ -119,20 +119,33 @@ test('(B-L1..B-L9) opérations longues dans un navigateur réel', { timeout: 300
   let held: { release(): void } | undefined;
 
   /**
-   * Consulte le reçu jusqu'au verdict — un clic humain, répété.
+   * Le trafic d'une opération longue, lu dans le réseau réel.
    *
-   * Le cockpit n'installe aucune consultation automatique : c'est donc au test
-   * de rejouer le geste. Rien n'est assoupli — le verdict attendu reste
-   * « effectuée », et le nombre de tentatives est borné.
+   * Le verdict n'est plus cherché par un clic : le suivi automatique du reçu le
+   * découvre seul. Ce qui se prouve, c'est ce suivi — et qu'il ne réémet rien.
+   * L'identifiant suivi se lit sur la première lecture de reçu qui suit l'envoi
+   * de la mutation : c'est le navigateur qui le connaît, pas le test qui le
+   * devine. L'envoi initial précède `snapshot` et n'est donc jamais compté
+   * comme un rejeu.
    */
-  const confirm = async (session: BrowserSession): Promise<number> => {
-    for (let attempt = 1; attempt <= 40; attempt += 1) {
-      const status = await session.evaluate<string>('document.getElementById("run-status").textContent');
-      if (status.includes('effectuée')) return attempt;
-      await session.evaluate('document.getElementById("operation-check")?.click()');
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    return -1;
+  const followed = (session: BrowserSession, mutation: string, snapshot: number) => {
+    const traffic = session.requests.map((entry) => ({
+      method: entry.method,
+      target: entry.url.replace(/^https?:\/\/[^/]+\//, ''),
+    }));
+    const before = traffic.slice(0, snapshot);
+    const after = traffic.slice(snapshot);
+    const issued = before.map((entry) => entry.method === 'POST' && entry.target === mutation).lastIndexOf(true);
+    const operationId = traffic
+      .slice(issued + 1)
+      .map((entry) => (entry.method === 'GET' ? /^api\/operations\/(op_[0-9a-f]+)$/.exec(entry.target)?.[1] : undefined))
+      .find((id) => id !== undefined);
+    return {
+      initialPosts: before.filter((entry) => entry.method === 'POST' && entry.target === mutation).length,
+      operationId,
+      receiptGets: after.filter((entry) => entry.method === 'GET' && entry.target === `api/operations/${String(operationId)}`).length,
+      replayPosts: after.filter((entry) => entry.method === 'POST' && entry.target === mutation).length,
+    };
   };
 
   const select = async (session: BrowserSession, runId: string): Promise<void> => {
@@ -196,12 +209,21 @@ test('(B-L1..B-L9) opérations longues dans un navigateur réel', { timeout: 300
     );
 
     // ------------------------------------------------------------------
-    // B-L4 — le verdict ne vient qu'après le fournisseur, sur geste humain.
+    // B-L4 — le verdict vient après le fournisseur, et le suivi automatique du
+    // reçu le découvre seul : aucun clic de vérification, aucun STEP réémis.
     // ------------------------------------------------------------------
+    const stepSnapshot = browser.requests.length;
     barrier.open();
-    const stepAttempts = await confirm(browser);
-    t.diagnostic(`STEP : verdict obtenu au bout de ${String(stepAttempts)} consultation(s)`);
-    assert.ok(stepAttempts > 0, 'le verdict finit par arriver, sur geste humain');
+    await browser.waitFor('document.getElementById("run-status").textContent.includes("effectuée")');
+    const stepTraffic = followed(browser, `api/runs/${RUNS[0]}/step`, stepSnapshot);
+    t.diagnostic(
+      `STEP : envoi initial=${String(stepTraffic.initialPosts)} · reçu ${String(stepTraffic.operationId)} relu ` +
+        `${String(stepTraffic.receiptGets)} fois après libération · STEP réémis=${String(stepTraffic.replayPosts)}`,
+    );
+    assert.equal(stepTraffic.initialPosts, 1, 'le STEP a été émis une fois, par le geste');
+    assert.notEqual(stepTraffic.operationId, undefined, 'le suivi porte sur l’opération STEP');
+    assert.ok(stepTraffic.receiptGets >= 1, 'le verdict arrive par le suivi automatique du reçu');
+    assert.equal(stepTraffic.replayPosts, 0, 'aucun STEP réémis');
     // La vue a bien été rechargée depuis le cœur : le tour est visible.
     await browser.evaluate('document.getElementById("tab-timeline").click()');
     await browser.waitFor('document.querySelectorAll("#section-timeline .entry").length >= 3');
@@ -215,10 +237,18 @@ test('(B-L1..B-L9) opérations longues dans un navigateur réel', { timeout: 300
     await browser.evaluate(`document.getElementById("send-content").value = ${JSON.stringify(HOSTILE_HUMAN)}`);
     await browser.evaluate('document.querySelector("[data-action=SEND]").click()');
     await browser.waitFor('document.getElementById("run-status").textContent.includes("· en cours")');
+    const sendSnapshot = browser.requests.length;
     barrier.open();
-    const sendAttempts = await confirm(browser);
-    t.diagnostic(`SEND : verdict obtenu au bout de ${String(sendAttempts)} consultation(s)`);
-    assert.ok(sendAttempts > 0, 'le verdict finit par arriver, sur geste humain');
+    await browser.waitFor('document.getElementById("run-status").textContent.includes("effectuée")');
+    const sendTraffic = followed(browser, `api/runs/${RUNS[0]}/send`, sendSnapshot);
+    t.diagnostic(
+      `SEND : envoi initial=${String(sendTraffic.initialPosts)} · reçu ${String(sendTraffic.operationId)} relu ` +
+        `${String(sendTraffic.receiptGets)} fois après libération · SEND réémis=${String(sendTraffic.replayPosts)}`,
+    );
+    assert.equal(sendTraffic.initialPosts, 1, 'le SEND a été émis une fois, par le geste');
+    assert.notEqual(sendTraffic.operationId, undefined, 'le suivi porte sur l’opération SEND');
+    assert.ok(sendTraffic.receiptGets >= 1, 'le verdict arrive par le suivi automatique du reçu');
+    assert.equal(sendTraffic.replayPosts, 0, 'aucun SEND réémis');
 
     await browser.evaluate('document.getElementById("tab-timeline").click()');
     await browser.waitFor(
