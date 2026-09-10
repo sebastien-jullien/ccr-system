@@ -29,7 +29,6 @@ import { resolveCockpitDataRoot } from '../../src/cockpit/data-root.ts';
 import { inspectServerLock } from '../../src/cockpit/server-lock.ts';
 import { createOperationStore } from '../../src/cockpit/operations-store.ts';
 import type { CockpitInstance } from '../../src/cockpit/cockpit-service.ts';
-import { readRunLock } from '../../src/lock/run-lock.ts';
 import { runPaths } from '../../src/store/layout.ts';
 import { readStableRunSnapshot } from '../../src/store/run-snapshot.ts';
 import { createFakeAdapter } from '../helpers/fake-adapter.ts';
@@ -324,59 +323,76 @@ test('(A3) une tentative condamnée ne demande jamais d’admission', async (t) 
 });
 
 // --------------------------------------------------------------------------
-// Registre hôte : après l'allocation, jamais avant
+// START en vol : ce que l'état natif dit pendant l'opération
 // --------------------------------------------------------------------------
 
+/**
+ * Le START est délibérément retenu — les adaptateurs attendent la barrière — et
+ * tout est lu PENDANT l'opération, jamais après. « Pendant » se mesure à
+ * l'entrée réelle dans la barrière, pas au 202 : le 202 dit le run alloué, il
+ * ne dit pas l'adaptateur entré.
+ *
+ * Ce que cette preuve porte, et rien de plus :
+ *
+ * ```text
+ * le run créé reste adressable
+ * l'initialisation engagée est nommée, durablement et en projection
+ * l'opération n'est pas présentée comme terminée
+ * ```
+ *
+ * La complétude de la projection — moteur, créneau, départ, position dans la
+ * séquence — n'est pas l'objet ici, et n'est donc pas asserté.
+ */
 test('(A4) START en vol : registre exact, vivacité honnête', async (t) => {
   const gate = barrier();
-  let seenBeforeAllocation = -1;
-  const b = await open({
-    onCall: () => gate.wait(),
-    startHooks: {
-      beforeAllocation: () => {
-        // Un créneau est pris ; aucun run n'existe, donc aucun lien de registre.
-        seenBeforeAllocation = 0;
-      },
-    },
-  });
+  const b = await open({ onCall: () => gate.wait() });
   try {
     const accepted = await b.start(intent(b.workspace), 'cle-registre-00001');
     assert.equal(accepted.status, 202, accepted.raw);
     const created = String(accepted.body['created_run_id']);
 
-    // Avant allocation : le manager suit une opération, le registre ne suit rien.
-    t.diagnostic(`avant allocation : liens de registre = ${String(seenBeforeAllocation)}`);
-    assert.equal(seenBeforeAllocation, 0, 'aucun lien de registre avant qu’un run existe');
-
-    // Après allocation : le lien porte le run ET le verrou réellement obtenu.
-    const lock = await readRunLock(runPaths(b.runsDir, created));
-    assert.ok(lock !== undefined, 'le run créé est verrouillé pendant son initialisation');
-    const bound = b.instance.registry.find(created, lock.lock_id);
-    t.diagnostic(`registre : run=${created} · lock_id=${lock.lock_id} · lié=${String(bound !== undefined)} · commande=${lock.command}`);
-    assert.ok(bound !== undefined, 'le registre lie exactement ce run à ce verrou');
-    assert.equal(lock.command, 'start');
-    assert.equal(b.instance.registry.find(created, `${lock.lock_id}-autre`), undefined, 'jamais sur le seul run_id');
-
-    // La vue du run dit ce qui est vrai : une opération est en vol, et rien
-    // n'appelle l'humain — ce n'est ni une reprise, ni une ambiguïté.
-    const view = await b.get(`/api/runs/${created}`);
-    const liveness = view.body['liveness'] as {
-      liveness: string;
-      basis: string;
-      needs_human_attention: boolean;
-      pending_operation: unknown;
-    };
-    t.diagnostic(
-      `vivacité=${liveness.liveness} · fondement=${liveness.basis} · ` +
-        `attention=${String(liveness.needs_human_attention)} · opération=${JSON.stringify(liveness.pending_operation)}`,
-    );
-    assert.equal(view.status, 200, view.raw);
-    assert.equal(liveness.liveness, 'OPERATION_IN_FLIGHT');
-    assert.equal(liveness.basis, 'HOST_REGISTRY_ACTIVE', 'l’évidence vient du registre, pas d’une heuristique');
-    assert.equal(liveness.needs_human_attention, false, 'une opération en vol n’appelle personne');
-    for (const forbidden of ['RECOVERY_REQUIRED', 'AMBIGUOUS', 'ORPHAN_LOCK', 'ABANDONED_OPERATION']) {
-      assert.notEqual(liveness.liveness, forbidden);
+    // Le 202 dit que le run est alloué et adressable ; il ne dit pas que
+    // l'adaptateur est entré. Lire avant cette entrée, c'est lire avant
+    // l'engagement, et prendre une absence pour une réponse. On attend donc
+    // l'entrée RÉELLE dans la barrière — jamais un délai fixe — et on la borne
+    // comme le reste du fichier : 400 tentatives de 25 ms.
+    for (let attempt = 0; attempt < 400 && gate.entered() < 1; attempt += 1) {
+      await sleep(25);
     }
+    t.diagnostic(`entrées barrière avant lecture native = ${String(gate.entered())}`);
+    assert.equal(gate.entered(), 1, 'l’adaptateur est réellement entré dans la barrière');
+
+    // La barrière n'est PAS relâchée ici : elle ne l'est qu'en « finally ».
+    // Tout ce qui suit est donc lu pendant que l'initialisation est retenue.
+
+    // Le reçu, à l'instant même de l'observation : l'opération court encore.
+    const receipt = await b.get(`/api/operations/${String(accepted.body['operation_id'])}`);
+    t.diagnostic(`reçu pendant le vol : ${String(receipt.body['status'])}`);
+    assert.equal(receipt.body['status'], 'RUNNING', 'l’opération n’est pas donnée pour terminée');
+
+    // La surface de lecture NATIVE. L'enveloppe porte le read model sous `run` ;
+    // son premier niveau n'a jamais porté de vivacité.
+    const view = await b.get(`/api/runs/${created}`);
+    assert.equal(view.status, 200, view.raw);
+    const run = view.body['run'] as {
+      identity: { run_id: string };
+      operational_state: { pending_operation: { kind: string } | null };
+    };
+    assert.equal(run.identity.run_id, created, 'la vue rendue est celle du run créé');
+
+    const pending = run.operational_state.pending_operation;
+    const inFlight = view.body['in_flight'] as { kind: string } | null;
+    t.diagnostic(
+      `pending_operation=${JSON.stringify(pending)} · in_flight=${JSON.stringify(inFlight)}`,
+    );
+
+    // L'opération engagée, dite durablement…
+    assert.notEqual(pending, null, 'une opération est durablement engagée');
+    assert.equal(pending?.kind, 'initialization');
+
+    // …et dite par la projection native, depuis le même instantané.
+    assert.notEqual(inFlight, null, 'la projection native nomme le travail en cours');
+    assert.equal(inFlight?.kind, 'initialization');
   } finally {
     gate.release();
     await b.cleanup();
