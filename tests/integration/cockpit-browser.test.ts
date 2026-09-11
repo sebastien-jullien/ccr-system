@@ -361,6 +361,7 @@ test('(B-M1..B-M8) mutations courtes dans un navigateur réel', { timeout: 300_0
       content: 'écriture externe',
       timestamp: new Date().toISOString(),
     });
+    const afterExternal = await readStableRunSnapshot(runsDir, 'CCR-20260402-001');
     await browser.evaluate('document.getElementById("tab-timeline").click()');
     await browser.waitFor(
       `document.querySelectorAll("#section-timeline .entry").length > ${String(beforeExternal)}`,
@@ -368,6 +369,15 @@ test('(B-M1..B-M8) mutations courtes dans un navigateur réel', { timeout: 300_0
     );
     t.diagnostic(`écriture externe reflétée sans geste humain (${String(beforeExternal)} → ${String(beforeExternal + 1)} entrées)`);
     await browser.evaluate('document.getElementById("tab-overview").click()');
+    // La chronologie peut rattraper l'écriture avant la vue du run : un
+    // rechargement à cheval sur l'écriture lit la vue avant, la chronologie
+    // après. Or l'action suivante part de la révision de la VUE DU RUN — celle
+    // qu'affiche « Révision complète ». On attend donc qu'elle ait rattrapé
+    // l'écriture, elle aussi.
+    await browser.waitFor(
+      `document.querySelector("#section-overview").textContent.includes(${JSON.stringify(afterExternal.revision)})`,
+    );
+    t.diagnostic(`vue du run à la révision de l’écriture externe : ${afterExternal.revision}`);
 
     // B-M6 — STOP exige une confirmation gouvernée par la capacité.
     await browser.waitFor('Boolean(document.querySelector("[data-action=STOP]"))');
