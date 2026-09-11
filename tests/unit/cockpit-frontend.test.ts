@@ -2524,4 +2524,17 @@ test('(F28) mutation courte, relecture échouée : l’effet reste réussi, et a
   assert.notEqual(done.runStatusClass, 'status is-error', 'la mutation n’est pas présentée comme un échec');
   assert.equal(done.overview.includes(RECOVERED), false, 'la vue du run n’a pas été rendue');
   assert.equal(bench.reads.length, baseline + 1, 'aucune lecture de run créée par le règlement');
+
+  // Plus tard, une écriture du même run revient par le flux : la relecture
+  // silencieuse réussit et rend la vue — sans emporter la réponse à la mutation.
+  bench.invalidate(RECOVERED);
+  await bench.settle();
+  assert.equal(bench.reads.length, baseline + 2, 'la relecture silencieuse, et elle seule');
+  bench.read(baseline + 1).gate.resolve(pausedView('d'));
+  await bench.settle();
+  const later = bench.snapshot();
+  t.diagnostic(`après la relecture silencieuse : vue rendue=${String(later.overview.includes(RECOVERED))} · statut du run=« ${later.runStatus} »`);
+  assert.ok(later.overview.includes(RECOVERED), 'la relecture silencieuse a rendu la vue du run');
+  assert.equal(later.runStatus, done.runStatus, 'la réponse à la mutation demeure, intacte');
+  assert.equal(later.runStatusClass, done.runStatusClass);
 });

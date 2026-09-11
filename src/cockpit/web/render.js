@@ -4300,6 +4300,10 @@ export function createDomView(doc, handlers = {}, options = {}) {
      */
     showMutationSucceededReloadFailed(action, receipt) {
       progressTargets.attempt = null;
+      // La réponse à la mutation prend la ligne de statut : le « chargement »
+      // posé par la relecture échouée n'y est plus, et un rafraîchissement
+      // silencieux ultérieur ne doit pas l'emporter en croyant l'effacer.
+      loadingStatusShown = false;
       const unread = ' La vue n’a pas pu être relue depuis les journaux CCR.';
       const outcome = outcomeNodes(receipt);
       if (outcome.length === 0) {
