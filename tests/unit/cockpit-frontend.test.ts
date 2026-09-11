@@ -2070,6 +2070,8 @@ async function recoveryRaceBench() {
 
   const reads: RunRead[] = [];
   let posts = 0;
+  /** Prochaine lecture de liste, retenue à la demande ; sinon immédiate. */
+  let nextList: { gate: RunRead['gate']; called: boolean } | null = null;
   const api = {
     runStreamUrl: (runId: string) => `/api/runs/${runId}/stream`,
     getRun: (runId: string, signal?: AbortSignal) => {
@@ -2080,7 +2082,13 @@ async function recoveryRaceBench() {
     },
     getTimeline: () => Promise.resolve(timelinePage([], null)),
     getRecovery: () => Promise.resolve(recoveryView(posts === 0 ? [ACKNOWLEDGE] : [])),
-    listRuns: () => Promise.resolve({ runs: [] }),
+    listRuns: () => {
+      const held = nextList;
+      if (held === null) return Promise.resolve({ runs: [] });
+      nextList = null;
+      held.called = true;
+      return held.gate.promise;
+    },
     recover: () => {
       posts += 1;
       return Promise.resolve({ operation_id: 'op_reprise', status: 'SUCCEEDED' });
@@ -2129,6 +2137,15 @@ async function recoveryRaceBench() {
     invalidate(runId: string): void {
       for (const stream of streams) stream.onInvalidate({ type: 'invalidate', resource: 'run', run_id: runId, at: '2026-08-08T00:00:00.000Z' });
       while (coalesced.length > 0) coalesced.shift()?.();
+    },
+    /** Retient la prochaine lecture de liste jusqu'à ce que le test la rende. */
+    holdNextListRuns() {
+      const held = { gate: deferred<Record<string, unknown>>(), called: false };
+      nextList = held;
+      return {
+        called: (): boolean => held.called,
+        release: (): void => held.gate.resolve({ runs: [] }),
+      };
     },
     /** Laisse s'écouler les continuations déjà dues — aucune horloge. */
     settle: (): Promise<void> => new Promise((resolve) => setImmediate(resolve)),
@@ -2265,4 +2282,76 @@ test('(F23) relecture échouée : l’effet reste réussi, et aucune relecture n
   assert.equal(done.overview.includes(RECOVERED), false, 'la vue du run n’a pas été rendue');
   assert.equal(bench.reads.length, 3, 'aucune lecture de run créée par la reprise');
   assert.equal(bench.posts(), 1, 'rien n’est réémis');
+});
+
+test('(F24) reprise pendant refreshRuns : l’annonce attend la charge autoritaire du même run', async (t) => {
+  // Deux révisions distinctes : la vue finale dit elle-même qui l'a rendue.
+  const renderedByInvalidation = runViewFixture(RECOVERED, {
+    revision: `sha256:${'c'.repeat(64)}`,
+    state: { state: 'PAUSED', control: 'HUMAN', round: 0, active_agent: null, updated_at: '2026-08-08T00:00:00.000Z' },
+  });
+  const bench = await recoveryRaceBench();
+  await bench.select(RECOVERED);
+  const baseline = bench.reads.length;
+
+  const recovering = bench.cockpit.recover('RECOVERY_ACKNOWLEDGE_AMBIGUITY', ACKNOWLEDGED);
+  await bench.settle();
+  assert.equal(bench.reads.length, baseline + 1, 'la relecture propre à la reprise (A) a commencé');
+  const recoveryLoad = bench.read(baseline);
+
+  // La prochaine lecture de liste — celle de refreshRuns() — est retenue, puis
+  // A va au bout sans concurrent.
+  const list = bench.holdNextListRuns();
+  recoveryLoad.gate.resolve(AFTER_RECOVERY);
+  await bench.settle();
+
+  // A a rendu, et la reprise est entrée dans refreshRuns() : c'est la fenêtre visée.
+  const afterA = bench.snapshot();
+  assert.equal(recoveryLoad.signal?.aborted, false, 'A n’a été supplantée par personne');
+  assert.equal((bench.cockpit.state['runView'] as { revision: unknown }).revision, AFTER_RECOVERY['revision'], 'A a rendu sa vue');
+  assert.equal(afterA.runStatus, '', 'A a rendu : plus de chargement');
+  assert.ok(afterA.overview.includes(RECOVERED), 'la vue du run est celle de A');
+  assert.equal(list.called(), true, 'refreshRuns() est en cours, sa lecture retenue');
+  const aRenderedBeforeB = afterA.overview.includes(RECOVERED) && recoveryLoad.signal?.aborted === false;
+  const refreshPendingAtB = list.called();
+
+  // B commence PENDANT refreshRuns(), et prend l'autorité.
+  bench.invalidate(RECOVERED);
+  await bench.settle();
+  assert.equal(bench.reads.length, baseline + 2, 'B, la charge d’invalidation, et rien d’autre');
+  const invalidationLoad = bench.read(baseline + 1);
+  assert.equal(invalidationLoad.runId, RECOVERED, 'B porte le run de la reprise');
+  assert.equal(invalidationLoad.signal?.aborted, false, 'B fait autorité');
+
+  // Négatif 1 — refreshRuns() et B tous deux en attente.
+  const duringRefresh = bench.snapshot();
+  assert.equal(duringRefresh.recoveryStatus.includes('effectuée'), false, 'aucune annonce pendant refreshRuns(), B en attente');
+
+  // Négatif 2 — refreshRuns() se termine, B n'a toujours pas rendu.
+  list.release();
+  await bench.settle();
+  const afterRefresh = bench.snapshot();
+  assert.equal(afterRefresh.recoveryStatus.includes('effectuée'), false, 'toujours aucune annonce : B n’a pas rendu');
+  assert.equal(bench.reads.length, baseline + 2, 'aucune charge créée par la reprise après refreshRuns()');
+  assert.equal(invalidationLoad.signal?.aborted, false, 'B n’est pas avortée par la reprise');
+
+  // Positif — B rend, et alors seulement l'annonce paraît.
+  invalidationLoad.gate.resolve(renderedByInvalidation);
+  await recovering;
+  const done = bench.snapshot();
+  t.diagnostic(
+    `A rendue avant B=${String(aRenderedBeforeB)} · B commencée pendant refreshRuns=${String(refreshPendingAtB)} · ` +
+      `annonce : pendant refreshRuns=${String(duringRefresh.recoveryStatus.includes('effectuée'))}, ` +
+      `après refreshRuns=${String(afterRefresh.recoveryStatus.includes('effectuée'))}, ` +
+      `après rendu de B=${String(done.recoveryStatus.includes('effectuée'))} · lectures de run=${String(baseline)}+${String(bench.reads.length - baseline)}`,
+  );
+  assert.ok(done.recoveryStatus.includes('effectuée. La vue a été relue'), 'l’annonce vient après le rendu de B');
+  assert.equal(bench.cockpit.state['selectedRunId'], RECOVERED, 'le run sélectionné reste celui de la reprise');
+  assert.equal((bench.cockpit.state['runView'] as { revision: unknown }).revision, renderedByInvalidation['revision'], 'la vue rendue est celle de B');
+  assert.equal(done.runStatus, '', 'la vue n’est plus en chargement');
+  assert.ok(done.overview.includes(RECOVERED));
+  assert.equal(bench.reads.length, baseline + 2, 'A + B, et rien d’autre');
+  assert.equal(invalidationLoad.signal?.aborted, false, 'B adoptée, jamais avortée');
+  assert.equal(bench.posts(), 1, 'une reprise, un envoi');
+  assert.equal(bench.streams.length, 1, 'aucun nouveau flux : la sélection n’a pas bougé');
 });
