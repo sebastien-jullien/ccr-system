@@ -98,6 +98,21 @@ La plupart des outils l'ajoutent avec l'option `-s` de `commit`.
 Le texte intégral du Developer Certificate of Origin 1.1 est disponible sur
 <https://developercertificate.org/>.
 
+**Exception historique.** L'historique du projet, jusqu'au commit de borne
+ci-dessous inclus, est accepté comme historique canonique même lorsque ses
+commits ne portent pas de ligne `Signed-off-by`.
+
+```text
+DERNIER COMMIT COUVERT   6fb91faafce54198ca4939437cf6c25a5666be56
+```
+
+Cette exception est bornée à ce commit et à ses ancêtres. Elle ne modifie ni ne
+réécrit aucun commit : une ligne `Signed-off-by` absente d'un commit historique
+y reste absente.
+
+Tout commit postérieur à cette borne est soumis sans exception au sign-off DCO
+exigé ci-dessus, à commencer par le commit qui introduit la présente exception.
+
 ---
 
 ## Licence des contributions
