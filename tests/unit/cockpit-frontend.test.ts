@@ -2028,3 +2028,241 @@ test('(A-N-P2-01/T-E) un run déjà alloué résout la tentative', async () => {
   assert.equal(allocated.guardAfter, false, 'un run connu résout la tentative');
   assert.equal(allocated.secondAllowed, true);
 });
+
+// --------------------------------------------------------------------------
+// (F20..F23) L'annonce de reprise attend la vue qui fait autorité
+// --------------------------------------------------------------------------
+
+const RECOVERED = 'CCR-20260402-001';
+const BEFORE_RECOVERY = runViewFixture(RECOVERED);
+const AFTER_RECOVERY = runViewFixture(RECOVERED, {
+  revision: `sha256:${'b'.repeat(64)}`,
+  state: { state: 'PAUSED', control: 'HUMAN', round: 0, active_agent: null, updated_at: '2026-08-08T00:00:00.000Z' },
+});
+
+interface RunRead {
+  readonly runId: string;
+  readonly signal: AbortSignal | undefined;
+  readonly gate: { promise: Promise<Record<string, unknown>>; resolve(value: Record<string, unknown>): void; reject(error: unknown): void };
+}
+
+/**
+ * Banc de la course entre la relecture d'une reprise et l'invalidation.
+ *
+ * La vue DOM de production tourne sur le DOM factice, et chaque lecture de run
+ * est une promesse tenue par le test : rien ne dépend d'une horloge. Une
+ * lecture avortée est rejetée comme `fetch` le ferait, et le rafraîchissement
+ * coalescé ne part que lorsque le test pousse l'invalidation.
+ */
+async function recoveryRaceBench() {
+  const { createCockpit } = (await importWeb('cockpit.js')) as {
+    createCockpit: (deps: unknown) => {
+      selectRun(id: string): Promise<unknown>;
+      recover(capabilityId: string, options?: unknown): Promise<void>;
+      state: Record<string, unknown>;
+    };
+  };
+  const { createDomView } = (await importWeb('render.js')) as {
+    createDomView: (doc: unknown, handlers?: unknown) => Record<string, (...args: unknown[]) => void>;
+  };
+  const dom = createFakeDom([...SHELL_IDS]);
+  const view = createDomView(dom.document, {});
+
+  const reads: RunRead[] = [];
+  let posts = 0;
+  const api = {
+    runStreamUrl: (runId: string) => `/api/runs/${runId}/stream`,
+    getRun: (runId: string, signal?: AbortSignal) => {
+      const gate = deferred<Record<string, unknown>>();
+      reads.push({ runId, signal, gate });
+      signal?.addEventListener('abort', () => gate.reject(new DOMException('The operation was aborted.', 'AbortError')));
+      return gate.promise;
+    },
+    getTimeline: () => Promise.resolve(timelinePage([], null)),
+    getRecovery: () => Promise.resolve(recoveryView(posts === 0 ? [ACKNOWLEDGE] : [])),
+    listRuns: () => Promise.resolve({ runs: [] }),
+    recover: () => {
+      posts += 1;
+      return Promise.resolve({ operation_id: 'op_reprise', status: 'SUCCEEDED' });
+    },
+  };
+
+  const streams: { url: string; onInvalidate: (message: unknown) => void }[] = [];
+  const coalesced: (() => void)[] = [];
+  const cockpit = createCockpit({
+    api,
+    view,
+    openStream: (url: string, onInvalidate: (message: unknown) => void) => {
+      streams.push({ url, onInvalidate });
+      return { close: () => undefined };
+    },
+    scheduleCoalesced: (run: () => void) => {
+      coalesced.push(run);
+    },
+  });
+
+  const node = (id: string): FakeNode => {
+    const found = dom.document.getElementById(id) as FakeNode | null;
+    if (found === null) throw new Error(`nœud absent : ${id}`);
+    return found;
+  };
+  const buttonsIn = (root: FakeNode): number =>
+    root.children.reduce((count, child) => count + (child.tagName === 'BUTTON' ? 1 : 0) + buttonsIn(child), 0);
+
+  return {
+    cockpit,
+    reads,
+    streams,
+    posts: () => posts,
+    read(index: number): RunRead {
+      const found = reads[index];
+      if (found === undefined) throw new Error(`lecture de run absente : #${String(index)}`);
+      return found;
+    },
+    /** Sélectionne le run et rend sa vue d'avant la reprise. */
+    async select(runId: string): Promise<void> {
+      const pending = cockpit.selectRun(runId);
+      this.read(reads.length - 1).gate.resolve(BEFORE_RECOVERY);
+      await pending;
+    },
+    /** Le flux du run signale une écriture ; le rafraîchissement coalescé part. */
+    invalidate(runId: string): void {
+      for (const stream of streams) stream.onInvalidate({ type: 'invalidate', resource: 'run', run_id: runId, at: '2026-08-08T00:00:00.000Z' });
+      while (coalesced.length > 0) coalesced.shift()?.();
+    },
+    /** Laisse s'écouler les continuations déjà dues — aucune horloge. */
+    settle: (): Promise<void> => new Promise((resolve) => setImmediate(resolve)),
+    snapshot() {
+      return {
+        recoveryStatus: node('recovery-status').textContent,
+        recoveryStatusClass: node('recovery-status').attributes['class'] ?? '',
+        runStatus: node('run-status').textContent,
+        runStatusClass: node('run-status').attributes['class'] ?? '',
+        overview: node('section-overview').textContent,
+        recoveryRendered: node('recovery-body').textContent.length > 0,
+        recoveryButtons: buttonsIn(node('recovery-body')),
+      };
+    },
+  };
+}
+
+const ACKNOWLEDGED = { acknowledgementText: 'Vérifié au terminal.' };
+
+test('(F20) reprise sans course : l’annonce suit le rendu de sa propre relecture', async (t) => {
+  const bench = await recoveryRaceBench();
+  await bench.select(RECOVERED);
+
+  const recovering = bench.cockpit.recover('RECOVERY_ACKNOWLEDGE_AMBIGUITY', ACKNOWLEDGED);
+  await bench.settle();
+  assert.equal(bench.reads.length, 2, 'la sélection, puis la relecture propre à la reprise');
+  const pending = bench.snapshot();
+  assert.equal(pending.runStatus, 'Chargement du run…');
+  assert.equal(pending.recoveryStatus.includes('effectuée'), false, 'rien n’est annoncé tant que la vue charge');
+
+  bench.read(1).gate.resolve(AFTER_RECOVERY);
+  await recovering;
+  const done = bench.snapshot();
+  t.diagnostic(`lectures de run=${String(bench.reads.length)} · statut=« ${done.recoveryStatus} »`);
+  assert.ok(done.recoveryStatus.includes('effectuée. La vue a été relue'), 'l’annonce ordinaire, après le rendu');
+  assert.equal(done.runStatus, '', 'la vue n’est plus en chargement');
+  assert.ok(done.overview.includes(RECOVERED), 'la vue du run est rendue');
+  assert.ok(done.recoveryRendered, 'le panneau de reprise est rendu');
+  assert.equal(done.recoveryButtons, 0, 'la capacité consommée a disparu');
+  assert.equal(bench.reads.length, 2, 'aucune lecture de plus');
+  assert.equal(bench.posts(), 1, 'une reprise, un envoi');
+  assert.equal(bench.cockpit.state['selectedRunId'], RECOVERED);
+});
+
+test('(F21) reprise supplantée par l’invalidation : la charge du flux est adoptée, l’annonce attend son rendu', async (t) => {
+  const bench = await recoveryRaceBench();
+  await bench.select(RECOVERED);
+
+  const recovering = bench.cockpit.recover('RECOVERY_ACKNOWLEDGE_AMBIGUITY', ACKNOWLEDGED);
+  await bench.settle();
+  const recoveryLoad = bench.read(1);
+
+  // L'écriture de la reprise revient par le flux : la charge silencieuse B
+  // prend la main, et la relecture propre à la reprise (A) est supplantée.
+  bench.invalidate(RECOVERED);
+  await bench.settle();
+  assert.equal(bench.reads.length, 3, 'A, puis B — et rien d’autre');
+  const invalidationLoad = bench.read(2);
+  assert.equal(recoveryLoad.signal?.aborted, true, 'A est supplantée');
+  assert.equal(invalidationLoad.signal?.aborted, false, 'B fait autorité');
+
+  const contested = bench.snapshot();
+  t.diagnostic(`pendant B : statut du run=« ${contested.runStatus} » · reprise=« ${contested.recoveryStatus} »`);
+  assert.equal(contested.runStatus, 'Chargement du run…', 'la vue n’est pas encore rendue');
+  assert.equal(contested.overview, '');
+  assert.equal(contested.recoveryStatus.includes('effectuée'), false, 'aucune annonce avant le rendu de B');
+
+  invalidationLoad.gate.resolve(AFTER_RECOVERY);
+  await recovering;
+  const done = bench.snapshot();
+  assert.ok(done.recoveryStatus.includes('effectuée. La vue a été relue'), 'l’annonce vient après le rendu de B');
+  assert.equal(done.runStatus, '', 'la vue n’est plus en chargement');
+  assert.ok(done.overview.includes(RECOVERED), 'B a rendu la vue du run');
+  assert.equal((bench.cockpit.state['runView'] as { revision: unknown }).revision, AFTER_RECOVERY['revision']);
+  assert.ok(done.recoveryRendered, 'le panneau de reprise est rendu');
+  assert.equal(done.recoveryButtons, 0, 'la capacité consommée a disparu');
+  // Aucune charge créée par la reprise : B est adoptée, jamais remplacée.
+  assert.equal(bench.reads.length, 3, 'aucune lecture de run créée par la reprise');
+  assert.equal(invalidationLoad.signal?.aborted, false, 'B n’a pas été avortée');
+  assert.equal(bench.posts(), 1, 'une reprise, un envoi');
+  assert.equal(bench.cockpit.state['selectedRunId'], RECOVERED, 'le run sélectionné reste celui de la reprise');
+  assert.equal(bench.streams.length, 1, 'aucun nouveau flux : la sélection n’a pas bougé');
+});
+
+test('(F22) supplantations en chaîne : l’annonce attend la dernière charge du même run', async (t) => {
+  const bench = await recoveryRaceBench();
+  await bench.select(RECOVERED);
+
+  const recovering = bench.cockpit.recover('RECOVERY_ACKNOWLEDGE_AMBIGUITY', ACKNOWLEDGED);
+  await bench.settle();
+  bench.invalidate(RECOVERED);
+  await bench.settle();
+  bench.invalidate(RECOVERED);
+  await bench.settle();
+
+  assert.equal(bench.reads.length, 4, 'A, B, C — la reprise puis deux invalidations');
+  assert.equal(bench.read(1).signal?.aborted, true, 'A est supplantée par B');
+  assert.equal(bench.read(2).signal?.aborted, true, 'B est supplantée par C');
+  const last = bench.read(3);
+  assert.equal(last.signal?.aborted, false, 'C fait autorité');
+  assert.equal(bench.snapshot().recoveryStatus.includes('effectuée'), false, 'aucune annonce avant le rendu de C');
+
+  last.gate.resolve(AFTER_RECOVERY);
+  await recovering;
+  const done = bench.snapshot();
+  t.diagnostic(`lectures de run=${String(bench.reads.length)} · statut=« ${done.recoveryStatus} »`);
+  assert.ok(done.recoveryStatus.includes('effectuée. La vue a été relue'), 'l’annonce vient après le rendu de C');
+  assert.equal(done.runStatus, '');
+  assert.ok(done.overview.includes(RECOVERED));
+  assert.equal(bench.reads.length, 4, 'aucune lecture de run créée par la reprise');
+  assert.equal(bench.posts(), 1);
+});
+
+test('(F23) relecture échouée : l’effet reste réussi, et aucune relecture n’est annoncée', async (t) => {
+  const { ApiError } = (await importWeb('api.js')) as { ApiError: new (s: number, c: string) => Error };
+  const bench = await recoveryRaceBench();
+  await bench.select(RECOVERED);
+
+  const recovering = bench.cockpit.recover('RECOVERY_ACKNOWLEDGE_AMBIGUITY', ACKNOWLEDGED);
+  await bench.settle();
+  bench.invalidate(RECOVERED);
+  await bench.settle();
+
+  // La charge qui fait autorité échoue : l'effet a eu lieu, la vue n'est pas relue.
+  bench.read(2).gate.reject(new ApiError(503, 'SNAPSHOT_UNSTABLE'));
+  await recovering;
+  const done = bench.snapshot();
+  t.diagnostic(`reprise=« ${done.recoveryStatus} » · run=« ${done.runStatus} »`);
+  assert.ok(done.recoveryStatus.includes('effectuée'), 'l’effet de la reprise reste dit réussi');
+  assert.equal(done.recoveryStatus.includes('a été relue'), false, 'aucune relecture annoncée');
+  assert.notEqual(done.recoveryStatusClass, 'status is-error', 'la reprise n’est pas présentée comme un échec');
+  assert.equal(done.runStatusClass, 'status is-error', 'l’échec de relecture est dit dans le statut du run');
+  assert.equal(done.runStatus.includes('Chargement'), false, 'la vue n’est plus en chargement');
+  assert.equal(done.overview.includes(RECOVERED), false, 'la vue du run n’a pas été rendue');
+  assert.equal(bench.reads.length, 3, 'aucune lecture de run créée par la reprise');
+  assert.equal(bench.posts(), 1, 'rien n’est réémis');
+});

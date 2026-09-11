@@ -4525,6 +4525,17 @@ export function createDomView(doc, handlers = {}, options = {}) {
     showRecoverySucceeded(capabilityId) {
       setStatus(nodes.recoveryStatus, label.recoveryCapability(capabilityId) + ' — effectuée. La vue a été relue depuis les journaux CCR.');
     },
+    /**
+     * Reprise effectuée, relecture de la vue échouée.
+     *
+     * Deux faits, dits l'un et l'autre : le reçu est terminal, donc l'effet a
+     * eu lieu — mais la vue n'a pas pu être relue. L'erreur de lecture est déjà
+     * dans le statut du run ; ici, ni échec de la reprise, ni annonce d'une
+     * relecture qui n'a pas eu lieu.
+     */
+    showRecoverySucceededReloadFailed(capabilityId) {
+      setStatus(nodes.recoveryStatus, label.recoveryCapability(capabilityId) + ' — effectuée. La vue n’a pas pu être relue depuis les journaux CCR.');
+    },
     showRecoveryActionError(capabilityId, described) {
       setStatus(nodes.recoveryStatus, label.recoveryCapability(capabilityId) + ' — ' + described.message, 'error');
     },

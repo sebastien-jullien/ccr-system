@@ -221,10 +221,35 @@ test('(B1..B4) reprise dans un navigateur réel', { timeout: 300_000 }, async (t
     t.diagnostic(`B1 · état ${stateAfter} · révision changée=${String(revisionAfter !== revisionBefore)} · fournisseurs=${String(providerCalls)}`);
     assert.notEqual(revisionAfter, revisionBefore, "l'effet canonique a eu lieu");
     assert.equal(providerCalls, 0, 'une reprise courte ne joint aucun fournisseur');
-    // La vue a été rechargée depuis le cœur : la capacité consommée a disparu.
-    await browser.waitFor(`${RECOVERY_BUTTONS}.length === 0`);
-    const overview = await browser.evaluate<string>('document.getElementById("section-overview").textContent');
-    assert.ok(overview.includes('CCR-20260402-001'), 'la vue canonique est rechargée');
+    // L'annonce ne précède jamais la vue qu'elle annonce. Lue d'un seul coup,
+    // la page montre donc la vue canonique rendue — ni un écran en chargement,
+    // ni un panneau de reprise simplement vidé par ce chargement.
+    const settled = await browser.evaluate<{
+      recoveryStatus: string;
+      runStatus: string;
+      overview: string;
+      recoveryPanel: string;
+      recoveryButtons: string[];
+      selected: string[];
+    }>(`({
+      recoveryStatus: document.getElementById("recovery-status").textContent,
+      runStatus: document.getElementById("run-status").textContent,
+      overview: document.getElementById("section-overview").textContent,
+      recoveryPanel: document.getElementById("recovery-body").textContent,
+      recoveryButtons: ${RECOVERY_BUTTONS},
+      selected: Array.from(document.querySelectorAll('#runs-list [aria-current="true"]')).map((n) => n.textContent),
+    })`);
+    t.diagnostic(
+      `B1 · à l’annonce : statut du run=« ${settled.runStatus} » · vue canonique=${String(settled.overview.includes(CANONICAL))} · ` +
+        `panneau de reprise=${String(settled.recoveryPanel.length)} car. · capacités=${settled.recoveryButtons.length === 0 ? '<aucune>' : settled.recoveryButtons.join(', ')} · ` +
+        `sélection=${settled.selected.map((entry) => entry.slice(0, 40)).join(' | ')}`,
+    );
+    assert.ok(settled.recoveryStatus.includes('effectuée'), 'la réussite est affichée à cet instant');
+    assert.equal(settled.runStatus.includes('Chargement'), false, 'la vue n’est plus en chargement');
+    assert.ok(settled.overview.includes(CANONICAL), 'la vue canonique est rechargée');
+    assert.ok(settled.recoveryPanel.length > 0, 'le panneau de reprise est rendu, pas seulement vidé');
+    assert.deepEqual(settled.recoveryButtons, [], 'la capacité consommée a disparu');
+    assert.ok(settled.selected.length === 1 && settled.selected[0]?.includes(CANONICAL), 'le run de la reprise reste sélectionné');
 
     // ----------------------------------------------------------------------
     // B2 — levée d'un verrou périmé

@@ -84,6 +84,28 @@ function createLatestOnly() {
   };
 }
 
+/**
+ * Issue d'un chargement de run.
+ *
+ * Qu'un `loadRun` se termine dit seulement qu'il s'est arrêté — pas qu'il a
+ * rendu quoi que ce soit. Un appelant qui annonce « la vue a été relue » doit
+ * savoir laquelle des trois issues il tient :
+ *
+ * ```text
+ * RENDERED    resté courant jusqu'au bout : la vue du run est rendue
+ * SUPERSEDED  une demande plus récente a pris la main avant la fin
+ * FAILED      resté courant, mais la lecture du run a échoué
+ * ```
+ *
+ * Une erreur locale de chronologie ou de reprise ne déclasse pas un rendu :
+ * elle s'affiche dans son panneau, et la vue du run, elle, est là.
+ */
+const LOAD_OUTCOME = Object.freeze({
+  RENDERED: 'RENDERED',
+  SUPERSEDED: 'SUPERSEDED',
+  FAILED: 'FAILED',
+});
+
 function describe(error) {
   if (error instanceof ApiError) {
     return { code: error.code, message: label.error(error.code), retryable: isRetryable(error.code) };
@@ -166,6 +188,17 @@ export function createCockpit(deps) {
   const runSequence = createLatestOnly();
   const timelineSequence = createLatestOnly();
 
+  /**
+   * Le dernier chargement de run **commencé** — celui qui fait autorité.
+   *
+   * `{ runId, outcome }`, enregistré dans le même tour synchrone que
+   * `runSequence.begin()`. Ce n'est pas un second ordonnanceur : le séquenceur
+   * reste seul juge, et cette poignée rend seulement visible la fin du
+   * chargement qu'il a désigné. Un appelant supplanté attend celui-là, au lieu
+   * d'en relancer un autre.
+   */
+  let authoritativeLoad = null;
+
   /** Une 401 signifie que la session du serveur a été renouvelée. */
   function handleFailure(error, show) {
     if (isAbort(error)) return;
@@ -216,10 +249,25 @@ export function createCockpit(deps) {
       && runView.generation === 'NATIVE_V21_EXECUTION';
   }
 
-  async function loadRun(runId, options = {}) {
+  /**
+   * Charge le run `runId`, et rend l'issue de ce chargement (`LOAD_OUTCOME`).
+   *
+   * La poignée d'autorité est posée au moment exact où le séquenceur désigne
+   * ce chargement — avant toute attente, donc sans que rien ne s'intercale.
+   */
+  function loadRun(runId, options = {}) {
+    const load = { runId, outcome: null };
+    load.outcome = performLoadRun(runId, options, () => {
+      authoritativeLoad = load;
+    });
+    return load.outcome;
+  }
+
+  async function performLoadRun(runId, options, becomeAuthoritative) {
     // Le flux suit l'écran : on n'écoute que ce qui est affiché.
     if (runId !== state.selectedRunId) followRun(runId);
     const token = runSequence.begin();
+    becomeAuthoritative();
     state.selectedRunId = runId;
     if (options.silent !== true) {
       // Ouvrir un run vide l'écran : on ne montre pas les faits d'un autre run
@@ -241,14 +289,14 @@ export function createCockpit(deps) {
 
     try {
       const runView = await api.getRun(runId, token.signal);
-      if (!runSequence.isCurrent(token)) return;
+      if (!runSequence.isCurrent(token)) return LOAD_OUTCOME.SUPERSEDED;
       state.runView = runView;
       state.native = isNativeView(runView);
       view.showRunView(runView, { silent: options.silent === true });
     } catch (error) {
-      if (!runSequence.isCurrent(token)) return;
+      if (!runSequence.isCurrent(token)) return LOAD_OUTCOME.SUPERSEDED;
       handleFailure(error, (described) => view.showRunError(described));
-      return;
+      return LOAD_OUTCOME.FAILED;
     }
 
     // Une seule route, deux projections (V2.1-IMP-19). La generation ne decide
@@ -259,25 +307,26 @@ export function createCockpit(deps) {
     // se chargent quand meme.
     try {
       const page = await api.getTimeline(runId, { limit: TIMELINE_PAGE_SIZE }, token.signal);
-      if (!runSequence.isCurrent(token)) return;
+      if (!runSequence.isCurrent(token)) return LOAD_OUTCOME.SUPERSEDED;
       state.timelineEntries = page.entries.slice();
       state.timelineRevision = page.revision;
       state.timelineCursorNext = page.cursor_next;
       view.showTimeline(state.timelineEntries, page, { silent: options.silent === true });
     } catch (error) {
-      if (!runSequence.isCurrent(token)) return;
+      if (!runSequence.isCurrent(token)) return LOAD_OUTCOME.SUPERSEDED;
       handleFailure(error, (described) => view.showTimelineError(described));
     }
 
     try {
       const recovery = await api.getRecovery(runId, token.signal);
-      if (!runSequence.isCurrent(token)) return;
+      if (!runSequence.isCurrent(token)) return LOAD_OUTCOME.SUPERSEDED;
       state.recoveryView = recovery;
       view.showRecovery(recovery);
     } catch (error) {
-      if (!runSequence.isCurrent(token)) return;
+      if (!runSequence.isCurrent(token)) return LOAD_OUTCOME.SUPERSEDED;
       handleFailure(error, (described) => view.showRecoveryError(described));
     }
+    return LOAD_OUTCOME.RENDERED;
   }
 
   async function loadMoreTimeline() {
@@ -1377,18 +1426,61 @@ export function createCockpit(deps) {
       view.showRecoveryUndetermined(attempt.capabilityId, receipt);
       return;
     }
-    if (attempt.primitive === 'nativeRecovery') {
-      await loadRun(attempt.runId);
-      await refreshRuns();
-    } else if (attempt.primitive === 'clearStaleRunLock') {
+    if (attempt.primitive === 'clearStaleRunLock') {
       // La levée ne touche aucun fait canonique : seule la vue de reprise a
       // changé, et recharger le reste laisserait croire le contraire.
       await reloadRecovery();
-    } else {
-      await loadRun(attempt.runId);
-      await refreshRuns();
+      view.showRecoverySucceeded(attempt.capabilityId);
+      return;
+    }
+    // Reprise canonique, native ou non : « la vue a été relue » ne se dit
+    // qu'une fois rendue la vue qui fait autorité. Un effet réussi dont la
+    // relecture échoue reste un effet réussi — seule l'annonce change.
+    if ((await reloadAuthoritativeRun(attempt.runId)) === LOAD_OUTCOME.FAILED) {
+      view.showRecoverySucceededReloadFailed(attempt.capabilityId);
+      return;
     }
     view.showRecoverySucceeded(attempt.capabilityId);
+  }
+
+  /**
+   * Relit le run d'une reprise réussie, et rend l'issue de la vue qui fait foi.
+   *
+   * Le chargement propre à la reprise peut être supplanté — typiquement par le
+   * rechargement silencieux que déclenche l'écriture même de la reprise. Il
+   * n'a alors **rien** rendu : l'écran est vide, et c'est son successeur qui le
+   * remplira. On attend donc ce successeur, et le suivant s'il est à son tour
+   * supplanté, sans jamais relancer de lecture : la dernière demande garde la
+   * main, et l'invalidation fait son travail.
+   *
+   * L'autorité se revérifie au moment d'annoncer, puisque la liste se relit
+   * entre-temps et qu'un chargement plus récent du même run a pu commencer.
+   *
+   * Si la main passe à un **autre** run, rien n'est attendu ni relancé : ce cas
+   * n'est pas gouverné ici, et il garde son comportement antérieur — l'issue
+   * rendue est alors `SUPERSEDED`.
+   */
+  async function reloadAuthoritativeRun(runId) {
+    const own = loadRun(runId);
+    let load = authoritativeLoad;
+    let outcome = await own;
+    let listRefreshed = false;
+    for (;;) {
+      if (outcome !== LOAD_OUTCOME.SUPERSEDED) {
+        if (!listRefreshed) {
+          listRefreshed = true;
+          await refreshRuns();
+        }
+        if (authoritativeLoad === load) return outcome;
+      }
+      const successor = authoritativeLoad;
+      if (successor === null || successor === load || successor.runId !== runId) break;
+      load = successor;
+      // Un successeur qui lève au lieu de rendre n'a rien rendu non plus.
+      outcome = await load.outcome.then((settled) => settled, () => LOAD_OUTCOME.FAILED);
+    }
+    if (!listRefreshed) await refreshRuns();
+    return LOAD_OUTCOME.SUPERSEDED;
   }
 
   /** Consulte le reçu d'une reprise indéterminée. Aucun envoi, aucun effet. */
