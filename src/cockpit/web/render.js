@@ -4291,6 +4291,30 @@ export function createDomView(doc, handlers = {}, options = {}) {
       for (const node of outcome) nodes.runStatus.appendChild(node);
     },
     /**
+     * Opération terminée, relecture de la vue échouée.
+     *
+     * Le reçu est terminal : ce qu'elle a répondu se dit comme pour un succès
+     * ordinaire — l'issue nommée si le domaine en rend une, sinon « effectuée ».
+     * Mais la vue n'a pas pu être relue, et on le dit : ni échec de la
+     * mutation, ni annonce d'une relecture qui n'a pas eu lieu.
+     */
+    showMutationSucceededReloadFailed(action, receipt) {
+      progressTargets.attempt = null;
+      const unread = ' La vue n’a pas pu être relue depuis les journaux CCR.';
+      const outcome = outcomeNodes(receipt);
+      if (outcome.length === 0) {
+        setStatus(nodes.runStatus, label.capability(action) + ' — effectuée.' + unread);
+        return;
+      }
+      if (nodes.runStatus === null) return;
+      clear(nodes.runStatus);
+      const recorded = receipt.domain_outcome.outcome === 'RECORDED';
+      nodes.runStatus.setAttribute('class', recorded ? 'status' : 'status is-attention');
+      nodes.runStatus.appendChild(el('span', { text: label.capability(action) + ' — ' }));
+      for (const node of outcome) nodes.runStatus.appendChild(node);
+      nodes.runStatus.appendChild(el('span', { text: unread }));
+    },
+    /**
      * Résultat indéterminé — `RUNNING` ou `UNKNOWN`.
      *
      * Aucune conclusion n'est prise à la place du serveur. Le bouton demeure —

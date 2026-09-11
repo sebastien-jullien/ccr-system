@@ -2047,18 +2047,21 @@ interface RunRead {
 }
 
 /**
- * Banc de la course entre la relecture d'une reprise et l'invalidation.
+ * Banc de la course entre la relecture d'une reprise — ou d'une mutation
+ * courte — et l'invalidation.
  *
  * La vue DOM de production tourne sur le DOM factice, et chaque lecture de run
  * est une promesse tenue par le test : rien ne dépend d'une horloge. Une
  * lecture avortée est rejetée comme `fetch` le ferait, et le rafraîchissement
  * coalescé ne part que lorsque le test pousse l'invalidation.
  */
-async function recoveryRaceBench() {
+async function recoveryRaceBench(options: { before?: Record<string, unknown> } = {}) {
+  const before = options.before ?? BEFORE_RECOVERY;
   const { createCockpit } = (await importWeb('cockpit.js')) as {
     createCockpit: (deps: unknown) => {
       selectRun(id: string): Promise<unknown>;
       recover(capabilityId: string, options?: unknown): Promise<void>;
+      mutate(action: string, options?: unknown): Promise<void>;
       state: Record<string, unknown>;
     };
   };
@@ -2070,6 +2073,7 @@ async function recoveryRaceBench() {
 
   const reads: RunRead[] = [];
   let posts = 0;
+  let mutations = 0;
   /** Prochaine lecture de liste, retenue à la demande ; sinon immédiate. */
   let nextList: { gate: RunRead['gate']; called: boolean } | null = null;
   const api = {
@@ -2092,6 +2096,10 @@ async function recoveryRaceBench() {
     recover: () => {
       posts += 1;
       return Promise.resolve({ operation_id: 'op_reprise', status: 'SUCCEEDED' });
+    },
+    mutate: () => {
+      mutations += 1;
+      return Promise.resolve({ operation_id: 'op_mutation', status: 'SUCCEEDED' });
     },
   };
 
@@ -2122,15 +2130,16 @@ async function recoveryRaceBench() {
     reads,
     streams,
     posts: () => posts,
+    mutations: () => mutations,
     read(index: number): RunRead {
       const found = reads[index];
       if (found === undefined) throw new Error(`lecture de run absente : #${String(index)}`);
       return found;
     },
-    /** Sélectionne le run et rend sa vue d'avant la reprise. */
+    /** Sélectionne le run et rend sa vue de départ. */
     async select(runId: string): Promise<void> {
       const pending = cockpit.selectRun(runId);
-      this.read(reads.length - 1).gate.resolve(BEFORE_RECOVERY);
+      this.read(reads.length - 1).gate.resolve(before);
       await pending;
     },
     /** Le flux du run signale une écriture ; le rafraîchissement coalescé part. */
@@ -2354,4 +2363,165 @@ test('(F24) reprise pendant refreshRuns : l’annonce attend la charge autoritai
   assert.equal(invalidationLoad.signal?.aborted, false, 'B adoptée, jamais avortée');
   assert.equal(bench.posts(), 1, 'une reprise, un envoi');
   assert.equal(bench.streams.length, 1, 'aucun nouveau flux : la sélection n’a pas bougé');
+});
+
+// --------------------------------------------------------------------------
+// (F25..F28) La réponse à une mutation courte attend la vue qui fait autorité
+// --------------------------------------------------------------------------
+
+const PAUSABLE = mutableRunView([capability('PAUSE')]);
+const pausedView = (fill: string): Record<string, unknown> =>
+  runViewFixture(RECOVERED, {
+    revision: `sha256:${fill.repeat(64)}`,
+    state: { state: 'PAUSED', control: 'HUMAN', round: 0, active_agent: null, updated_at: '2026-08-08T00:00:00.000Z' },
+  });
+const MUTATION_CLAIM = 'effectuée. La vue a été relue';
+
+test('(F25) mutation courte sans course : l’annonce suit le rendu, et demeure', async (t) => {
+  const bench = await recoveryRaceBench({ before: PAUSABLE });
+  await bench.select(RECOVERED);
+  const baseline = bench.reads.length;
+
+  const mutating = bench.cockpit.mutate('PAUSE');
+  await bench.settle();
+  assert.equal(bench.reads.length, baseline + 1, 'la relecture propre à la mutation (A) a commencé');
+  const pending = bench.snapshot();
+  assert.equal(pending.runStatus, 'Chargement du run…');
+  assert.equal(pending.runStatus.includes('effectuée'), false, 'rien n’est annoncé tant que la vue charge');
+
+  bench.read(baseline).gate.resolve(pausedView('d'));
+  await mutating;
+  const done = bench.snapshot();
+  assert.ok(done.runStatus.includes(MUTATION_CLAIM), 'l’annonce ordinaire, après le rendu');
+  assert.ok(done.overview.includes(RECOVERED), 'la vue du run est rendue');
+
+  // Une invalidation silencieuse ultérieure n'emporte pas la réponse.
+  bench.invalidate(RECOVERED);
+  await bench.settle();
+  bench.read(baseline + 1).gate.resolve(pausedView('d'));
+  await bench.settle();
+  const later = bench.snapshot();
+  t.diagnostic(`statut après rafraîchissement silencieux : « ${later.runStatus} »`);
+  assert.ok(later.runStatus.includes(MUTATION_CLAIM), 'la réponse survit au rafraîchissement silencieux');
+  assert.equal(bench.mutations(), 1, 'une mutation, un envoi');
+});
+
+test('(F26) mutation courte supplantée par l’invalidation : la charge du flux est adoptée, la réponse attend son rendu et demeure', async (t) => {
+  const bench = await recoveryRaceBench({ before: PAUSABLE });
+  await bench.select(RECOVERED);
+  const baseline = bench.reads.length;
+
+  const mutating = bench.cockpit.mutate('PAUSE');
+  await bench.settle();
+  const mutationLoad = bench.read(baseline);
+
+  // L'écriture de la mutation revient par le flux : B prend la main, A est supplantée.
+  bench.invalidate(RECOVERED);
+  await bench.settle();
+  assert.equal(bench.reads.length, baseline + 2, 'A, puis B — et rien d’autre');
+  const invalidationLoad = bench.read(baseline + 1);
+  assert.equal(mutationLoad.signal?.aborted, true, 'A est supplantée');
+  assert.equal(invalidationLoad.signal?.aborted, false, 'B fait autorité');
+
+  const contested = bench.snapshot();
+  t.diagnostic(`pendant B : statut du run=« ${contested.runStatus} » · vue=${String(contested.overview.length)} car.`);
+  assert.equal(contested.runStatus, 'Chargement du run…', 'la vue n’est pas encore rendue');
+  assert.equal(contested.overview, '');
+  assert.equal(contested.runStatus.includes('effectuée'), false, 'aucune annonce avant le rendu de B');
+
+  invalidationLoad.gate.resolve(pausedView('d'));
+  await mutating;
+  const done = bench.snapshot();
+  assert.ok(done.runStatus.includes(MUTATION_CLAIM), 'l’annonce vient après le rendu de B');
+  assert.ok(done.overview.includes(RECOVERED), 'B a rendu la vue du run');
+  assert.equal((bench.cockpit.state['runView'] as { revision: unknown }).revision, pausedView('d')['revision']);
+
+  // Ce qui reste dû s'écoule : le rendu silencieux de B ne doit rien emporter.
+  await bench.settle();
+  const settled = bench.snapshot();
+  assert.ok(settled.runStatus.includes(MUTATION_CLAIM), 'la réponse à la mutation demeure après le rendu silencieux');
+  assert.equal(bench.reads.length, baseline + 2, 'aucune lecture de run créée par le règlement');
+  assert.equal(invalidationLoad.signal?.aborted, false, 'B adoptée, jamais avortée');
+  assert.equal(bench.mutations(), 1, 'une mutation, un envoi');
+  assert.equal(bench.cockpit.state['selectedRunId'], RECOVERED, 'le run sélectionné reste celui de la mutation');
+  assert.equal(bench.streams.length, 1, 'aucun nouveau flux : la sélection n’a pas bougé');
+});
+
+test('(F27) mutation courte pendant refreshRuns : la réponse attend la charge autoritaire du même run', async (t) => {
+  const bench = await recoveryRaceBench({ before: PAUSABLE });
+  await bench.select(RECOVERED);
+  const baseline = bench.reads.length;
+
+  const mutating = bench.cockpit.mutate('PAUSE');
+  await bench.settle();
+  const mutationLoad = bench.read(baseline);
+
+  // La lecture de liste de refreshRuns() est retenue, puis A va au bout.
+  const list = bench.holdNextListRuns();
+  mutationLoad.gate.resolve(pausedView('d'));
+  await bench.settle();
+  const afterA = bench.snapshot();
+  assert.equal(mutationLoad.signal?.aborted, false, 'A n’a été supplantée par personne');
+  assert.equal((bench.cockpit.state['runView'] as { revision: unknown }).revision, pausedView('d')['revision'], 'A a rendu sa vue');
+  assert.equal(list.called(), true, 'refreshRuns() est en cours, sa lecture retenue');
+  assert.equal(afterA.runStatus.includes('effectuée'), false, 'rien n’est annoncé avant la fin de refreshRuns()');
+
+  // B commence PENDANT refreshRuns(), et prend l'autorité.
+  bench.invalidate(RECOVERED);
+  await bench.settle();
+  assert.equal(bench.reads.length, baseline + 2, 'B, la charge d’invalidation, et rien d’autre');
+  const invalidationLoad = bench.read(baseline + 1);
+  assert.equal(invalidationLoad.signal?.aborted, false, 'B fait autorité');
+
+  // Négatif 1 — refreshRuns() et B tous deux en attente.
+  const duringRefresh = bench.snapshot();
+  assert.equal(duringRefresh.runStatus.includes('effectuée'), false, 'aucune annonce pendant refreshRuns(), B en attente');
+
+  // Négatif 2 — refreshRuns() se termine, B n'a toujours pas rendu.
+  list.release();
+  await bench.settle();
+  const afterRefresh = bench.snapshot();
+  assert.equal(afterRefresh.runStatus.includes('effectuée'), false, 'toujours aucune annonce : B n’a pas rendu');
+  assert.equal(bench.reads.length, baseline + 2, 'aucune charge créée par le règlement après refreshRuns()');
+
+  // Positif — B rend, et alors seulement la réponse paraît, puis demeure.
+  invalidationLoad.gate.resolve(pausedView('e'));
+  await mutating;
+  await bench.settle();
+  const done = bench.snapshot();
+  t.diagnostic(
+    `annonce : pendant refreshRuns=${String(duringRefresh.runStatus.includes('effectuée'))}, ` +
+      `après refreshRuns=${String(afterRefresh.runStatus.includes('effectuée'))}, ` +
+      `après rendu de B=${String(done.runStatus.includes('effectuée'))} · lectures de run=${String(baseline)}+${String(bench.reads.length - baseline)}`,
+  );
+  assert.ok(done.runStatus.includes(MUTATION_CLAIM), 'l’annonce vient après le rendu de B');
+  assert.equal((bench.cockpit.state['runView'] as { revision: unknown }).revision, pausedView('e')['revision'], 'la vue rendue est celle de B');
+  assert.equal(bench.reads.length, baseline + 2, 'A + B, et rien d’autre');
+  assert.equal(invalidationLoad.signal?.aborted, false, 'B adoptée, jamais avortée');
+  assert.equal(bench.mutations(), 1, 'une mutation, un envoi');
+  assert.equal(bench.cockpit.state['selectedRunId'], RECOVERED);
+});
+
+test('(F28) mutation courte, relecture échouée : l’effet reste réussi, et aucune relecture n’est annoncée', async (t) => {
+  const { ApiError } = (await importWeb('api.js')) as { ApiError: new (s: number, c: string) => Error };
+  const bench = await recoveryRaceBench({ before: PAUSABLE });
+  await bench.select(RECOVERED);
+  const baseline = bench.reads.length;
+
+  const mutating = bench.cockpit.mutate('PAUSE');
+  await bench.settle();
+  // La charge qui fait autorité — ici la relecture propre à la mutation — échoue.
+  bench.read(baseline).gate.reject(new ApiError(503, 'SNAPSHOT_UNSTABLE'));
+  await mutating;
+  await bench.settle();
+  const done = bench.snapshot();
+  t.diagnostic(`statut du run=« ${done.runStatus} » (${done.runStatusClass})`);
+  assert.equal(bench.mutations(), 1, 'un seul envoi de la mutation');
+  assert.equal((bench.cockpit.state['attempt'] as { operationId?: unknown }).operationId, 'op_mutation', 'le reçu SUCCEEDED a été accepté');
+  assert.ok(done.runStatus.includes('effectuée'), 'l’effet de la mutation reste dit réussi');
+  assert.equal(done.runStatus.includes('a été relue'), false, 'aucune relecture annoncée');
+  assert.ok(done.runStatus.includes('pas pu être relue'), 'l’échec de relecture est dit');
+  assert.notEqual(done.runStatusClass, 'status is-error', 'la mutation n’est pas présentée comme un échec');
+  assert.equal(done.overview.includes(RECOVERED), false, 'la vue du run n’a pas été rendue');
+  assert.equal(bench.reads.length, baseline + 1, 'aucune lecture de run créée par le règlement');
 });

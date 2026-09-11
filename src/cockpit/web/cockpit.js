@@ -919,9 +919,16 @@ export function createCockpit(deps) {
         // Aucune mise à jour optimiste : la vérité revient du read model, et
         // la confirmation ne s affiche qu une fois la vue rechargée — sans
         // quoi elle annoncerait un état que l écran ne montre pas encore.
+        // « Rechargée » veut dire RENDUE par la charge qui fait autorité : une
+        // relecture supplantée par l'invalidation de cette même écriture n'a
+        // rien affiché. On attend donc son successeur, par la même relecture
+        // que la reprise — liste comprise, autorité revérifiée au moment
+        // d'annoncer —, et une relecture échouée ne s'annonce pas relue.
         stopFollowUp();
-        await loadRun(attempt.runId);
-        await refreshRuns();
+        if ((await reloadAuthoritativeRun(attempt.runId)) === LOAD_OUTCOME.FAILED) {
+          view.showMutationSucceededReloadFailed(attempt.action, receipt);
+          return;
+        }
         view.showMutationSucceeded(attempt.action, receipt);
         return;
       }
